@@ -1,0 +1,847 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SMPTE Register Search</title>
+  <script src="orgs.js"></script>
+  <script src="private.js"></script>
+  <script src="data.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 1.5rem 2rem 4rem;
+      background: #f4f6f9;
+      color: #1a1a2e;
+    }
+    h1 { margin: 0 0 0.2rem; font-size: 1.7rem; }
+    .subtitle { color: #666; font-size: 0.875rem; margin: 0 0 1.5rem; }
+
+    #search-row {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 0.6rem;
+    }
+    #query {
+      flex: 1;
+      padding: 0.65rem 1rem;
+      font-size: 1rem;
+      border: 2px solid #ccc;
+      border-radius: 8px;
+      outline: none;
+      background: white;
+      transition: border-color 0.15s;
+    }
+    #query:focus { border-color: #2563eb; }
+
+    #filters {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem 1rem;
+      flex-wrap: wrap;
+      font-size: 0.82rem;
+      color: #444;
+      margin-bottom: 0.9rem;
+    }
+    #filters strong { color: #222; margin-right: 0.2rem; }
+    #filters label {
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+      cursor: pointer;
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      border: 1px solid #ddd;
+      background: white;
+      transition: background 0.1s;
+    }
+    #filters label:hover { background: #e8f0fe; }
+    #filters label input { cursor: pointer; margin: 0; }
+    #hide-dep-wrap { margin-left: 0.5rem; border-color: #f9a8a8 !important; }
+    #hide-dep-wrap:hover { background: #fde8e8 !important; }
+
+    #status {
+      font-size: 0.8rem;
+      color: #666;
+      min-height: 1.3em;
+      margin-bottom: 0.6rem;
+    }
+    #status.error { color: #c0392b; }
+
+    .result-card {
+      background: white;
+      border: 1px solid #e0e4ec;
+      border-radius: 8px;
+      padding: 0.8rem 1rem;
+      margin-bottom: 0.45rem;
+      transition: box-shadow 0.1s;
+    }
+    .result-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+    .result-card.deprecated { opacity: 0.55; }
+    .result-card.unregistered { border-color: #f59e0b; background: #fffbeb; }
+
+    .card-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+      margin-bottom: 0.3rem;
+    }
+    .card-name { font-weight: 600; font-size: 0.975rem; }
+    .card-ul {
+      font-family: "SFMono-Regular", Consolas, monospace;
+      font-size: 0.72rem;
+      white-space: nowrap;
+    }
+    .ul-pfx { color: #bbb; }
+    .ul-dot { color: #bbb; }
+    /* bytes 0-3: fixed SMPTE header — muted */
+    .ul-fixed { color: #bbb; cursor: help; }
+    /* bytes 4-7: registry designators — can be 7f wildcard */
+    .ul-wc-range { color: #555; cursor: help; }
+    /* bytes 4-7 with value 7f: active wildcard */
+    .ul-wc-active { color: #d97706; font-weight: 700; cursor: help; }
+    /* bytes 8-15: item designators — literal values */
+    .ul-item { color: #444; cursor: help; }
+
+    .card-meta {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem 0.6rem;
+      flex-wrap: wrap;
+      margin-bottom: 0.3rem;
+    }
+    .card-symbol {
+      font-family: "SFMono-Regular", Consolas, monospace;
+      font-size: 0.8rem;
+      color: #2563eb;
+    }
+    .card-doc { font-size: 0.78rem; color: #555; }
+    .card-def { font-size: 0.82rem; color: #333; }
+
+    .badge {
+      display: inline-block;
+      padding: 0.1rem 0.45rem;
+      border-radius: 4px;
+      font-size: 0.68rem;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+    .b-reg  { background: #dbeafe; color: #1d4ed8; }
+    .b-kind { background: #dcfce7; color: #15803d; }
+    .b-dep  { background: #fee2e2; color: #b91c1c; }
+
+    mark { background: #fde68a; border-radius: 2px; padding: 0 1px; font-style: normal; }
+
+    .card-hints {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.3rem;
+      margin-top: 0.4rem;
+      font-size: 0.72rem;
+    }
+    .hint {
+      display: inline-block;
+      padding: 0.15rem 0.5rem;
+      border-radius: 3px;
+      background: #e3f2fd;
+      color: #1565c0;
+      border-left: 2px solid #1565c0;
+    }
+
+    #more-note {
+      text-align: center;
+      color: #888;
+      font-size: 0.82rem;
+      padding: 1rem 0;
+    }
+
+    /* --- Expandable details --- */
+    .entry-details { margin-top: 0.5rem; }
+    .entry-details summary {
+      cursor: pointer;
+      font-size: 0.75rem;
+      color: #2563eb;
+      user-select: none;
+      list-style: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+    }
+    .entry-details summary::before { content: '▶'; font-size: 0.6rem; transition: transform 0.15s; }
+    .entry-details[open] summary::before { transform: rotate(90deg); }
+    .details-content {
+      margin-top: 0.6rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.8rem;
+    }
+    .details-section h4 {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #999;
+      margin: 0 0 0.3rem;
+      font-weight: 600;
+    }
+    .details-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.75rem;
+    }
+    .details-table th, .details-table td {
+      text-align: left;
+      padding: 0.2rem 0.5rem;
+      border-bottom: 1px solid #f0f2f5;
+      vertical-align: top;
+    }
+    .details-table thead th {
+      font-weight: 600;
+      color: #666;
+      background: #f8f9fb;
+      white-space: nowrap;
+    }
+    .details-table tbody th {
+      font-weight: 600;
+      color: #555;
+      white-space: nowrap;
+      width: 1%;
+    }
+    /* UL byte table row colouring */
+    .details-table tr.byte-fixed td  { color: #bbb; }
+    .details-table tr.byte-wc       td:first-child,
+    .details-table tr.byte-wc       td:nth-child(2) { color: #555; }
+    .details-table tr.byte-wc-active td:first-child,
+    .details-table tr.byte-wc-active td:nth-child(2) { color: #d97706; font-weight: 700; }
+    .details-table tr.byte-wc-active td:last-child em { color: #d97706; font-style: normal; font-weight: 600; }
+    .details-table tr.byte-item td  { color: #444; }
+    .details-table td.mono { font-family: "SFMono-Regular", Consolas, monospace; }
+
+    #org-registry {
+      background: white;
+      border: 1px solid #e0e4ec;
+      border-radius: 8px;
+      margin-bottom: 1rem;
+      overflow: hidden;
+    }
+    #org-registry summary {
+      padding: 0.8rem 1rem;
+      cursor: pointer;
+      font-weight: 600;
+      background: #f8f9fb;
+      border-bottom: 1px solid #e0e4ec;
+      user-select: none;
+    }
+    #org-registry summary:hover { background: #eef2ff; }
+    #org-registry-content {
+      padding: 0.8rem 0;
+    }
+    .org-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.875rem;
+    }
+    .org-table th {
+      padding: 0.6rem 1rem;
+      text-align: left;
+      font-weight: 600;
+      color: #666;
+      background: #f8f9fb;
+      border-bottom: 1px solid #e0e4ec;
+      white-space: nowrap;
+    }
+    .org-table td {
+      padding: 0.5rem 1rem;
+      border-bottom: 1px solid #f0f2f5;
+    }
+    .org-table tr:hover { background: #fafbfc; }
+    .org-name {
+      color: #2563eb;
+      cursor: pointer;
+      text-decoration: none;
+      font-weight: 500;
+    }
+    .org-name:hover { text-decoration: underline; }
+    .org-class { text-align: center; font-weight: 600; }
+    .org-class.cls13 { color: #059669; }
+    .org-class.cls14 { color: #dc2626; }
+    .org-docs { text-align: center; }
+    .org-docs.documented { color: #059669; font-weight: 600; }
+    .org-docs.partial { color: #d97706; }
+    .org-docs.none { color: #999; }
+  </style>
+</head>
+<body>
+  <h1>SMPTE Register Search</h1>
+  <p class="subtitle">Search Labels, Types, Elements, Groups and Essence registers by UL, Symbol, Name, Definition, or any other field.</p>
+
+  <details id="disclaimer-section">
+    <summary style="cursor: pointer; color: #666; font-size: 0.875rem; margin-bottom: 1rem;">⚠️ Disclaimer & Legal Notice</summary>
+    <div style="background: #f3e8ff; border: 1px solid #d8b4fe; border-radius: 6px; padding: 1rem; margin-bottom: 1rem; font-size: 0.85rem; color: #333; line-height: 1.6;">
+      <p style="margin: 0 0 0.6rem;">
+        <strong>Disclaimer:</strong> This service is <strong>NOT affiliated with, endorsed by, or maintained by the Society of Motion Picture and Television Engineers (SMPTE)</strong>. This is an independent, unofficial search tool created for educational and informational purposes only.
+      </p>
+      <p style="margin: 0 0 0.6rem;">
+        <strong>Data Source:</strong> Register data is derived from publicly available SMPTE XML register files. While efforts are made to maintain accuracy, users are responsible for verifying information against official SMPTE documentation.
+      </p>
+      <p style="margin: 0 0 0.6rem;">
+        <strong>Private/Proprietary Information:</strong> This tool includes reverse-engineered or documented private UL definitions from Class 14 (Private Use) registrations. Use of proprietary definitions is subject to applicable intellectual property and licensing regulations.
+      </p>
+      <p style="margin: 0 0 0.6rem;">
+        <strong>Regulatory Compliance:</strong> Users are solely responsible for ensuring their use of this tool and any information derived from it complies with applicable laws, regulations, and licensing agreements. This includes but is not limited to intellectual property rights, patent licensing, and industry-specific compliance requirements.
+      </p>
+      <p style="margin: 0;">
+        <strong>Official Source:</strong> For authoritative information, standards, and registrations, visit the official SMPTE-RA registry at <a href="https://www.smpte-ra.org/" target="_blank" rel="noopener noreferrer" style="color: #7c3aed; text-decoration: underline;">www.smpte-ra.org</a>
+      </p>
+    </div>
+  </details>
+
+  <div id="search-row">
+    <input type="text" id="query"
+      placeholder="UL (e.g. 060e2b34, 06.0e.2b.34, 0x06 0x0e), Symbol, Name, Definition…"
+      autocomplete="off" spellcheck="false">
+  </div>
+
+  <div id="filters">
+    <strong>Registers:</strong>
+    <label><input type="checkbox" value="Labels"   checked> Labels</label>
+    <label><input type="checkbox" value="Types"    checked> Types</label>
+    <label><input type="checkbox" value="Elements" checked> Elements</label>
+    <label><input type="checkbox" value="Groups"   checked> Groups</label>
+    <label><input type="checkbox" value="Essence"  checked> Essence</label>
+    <label id="hide-dep-wrap"><input type="checkbox" id="hide-deprecated"> Hide deprecated</label>
+  </div>
+
+  <details id="org-registry">
+    <summary>SMPTE-RA Class 13/14 Organization Registry</summary>
+    <div id="org-registry-content">
+      <table class="org-table">
+        <thead>
+          <tr>
+            <th>Organization</th>
+            <th class="org-class">Class</th>
+            <th class="org-docs">Known ULs</th>
+          </tr>
+        </thead>
+        <tbody id="org-table-body">
+        </tbody>
+      </table>
+    </div>
+  </details>
+
+  <div id="status"></div>
+  <div id="results"></div>
+  <div id="more-note" style="display:none"></div>
+
+  <script>
+    'use strict';
+
+    // --- UL normalization ---
+    function normalizeHex(s) {
+      return s
+        .replace(/^urn:smpte:ul:/i, '')
+        .replace(/0x/gi, '')
+        .replace(/[^0-9a-f]/gi, '')
+        .toLowerCase();
+    }
+
+    function looksLikeHex(s) {
+      const stripped = normalizeHex(s);
+      return stripped.length >= 2 && /^[0-9a-f]+$/.test(stripped);
+    }
+
+    function escRegex(s) {
+      return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
+    // Per SMPTE ST 336: bytes 5-8 (1-indexed) = bytes 4-7 (0-indexed) are Registry Designators.
+    // 7f in those positions is a version wildcard matching any byte.
+    // Bytes 9-16 (1-indexed) = bytes 8-15 (0-indexed) are Item Designators where 7f is literal.
+    // The check is symmetric: 7f on either side triggers wildcard treatment, so one call suffices.
+    function ulMatchesWithWildcard(searchUL, entryUL) {
+      if (searchUL.length !== entryUL.length) return false;
+      for (let i = 0; i < searchUL.length; i += 2) {
+        const bytePos = i / 2;
+        const a = searchUL.substring(i, i + 2);
+        const b = entryUL.substring(i, i + 2);
+        if (bytePos >= 4 && bytePos <= 7 && (a === '7f' || b === '7f')) continue;
+        if (a !== b) return false;
+      }
+      return true;
+    }
+
+    const ORG_REGISTRY = window.ORG_REGISTRY;
+
+    function orgForNormUL(normUL) {
+      return normUL.length >= 20 ? (ORG_REGISTRY[normUL.substring(16, 20)] || null) : null;
+    }
+
+    function populateOrgRegistry() {
+      const tbody = document.getElementById('org-table-body');
+      const privateULs = window.PRIVATE_ULS || {};
+
+      const rows = Object.entries(ORG_REGISTRY).map(([key, org]) => {
+        const ulsForOrg = Object.values(privateULs).filter(ul => ul.org === org.name).length;
+        const classCls = org.cls === 13 ? 'cls13' : 'cls14';
+        const docsCls = ulsForOrg > 0 ? (ulsForOrg >= 3 ? 'documented' : 'partial') : 'none';
+        const docsText = ulsForOrg > 0 ? `${ulsForOrg}` : '—';
+
+        return `<tr>
+          <td><a class="org-name" onclick="document.getElementById('query').value='${org.name}'; runSearch(); window.scrollTo(0,0); return false;">${escHtml(org.name)}</a></td>
+          <td class="org-class ${classCls}">${org.cls}</td>
+          <td class="org-docs ${docsCls}">${docsText}</td>
+        </tr>`;
+      }).join('');
+
+      tbody.innerHTML = rows;
+    }
+
+    // --- Init ---
+    const statusEl  = document.getElementById('status');
+    const resultsEl = document.getElementById('results');
+    const moreEl    = document.getElementById('more-note');
+    const queryEl   = document.getElementById('query');
+
+    if (!window.SMPTE_ENTRIES) {
+      statusEl.className = 'error';
+      statusEl.textContent = 'data.js not found. Run build-data.ps1 first to generate it.';
+      throw new Error('SMPTE_ENTRIES not defined');
+    }
+
+    const allEntries = window.SMPTE_ENTRIES.map(e => {
+      const normUL = normalizeHex(e.ul || '');
+      return {
+        register:      e.register,
+        symbol:        e.symbol        || '',
+        ul:            e.ul            || '',
+        kind:          e.kind          || '',
+        name:          e.name          || '',
+        definition:    e.definition    || '',
+        defDoc:        e.defDoc        || '',
+        namespaceName: e.namespaceName || '',
+        isConcrete:    e.isConcrete    || '',
+        klvSyntax:     e.klvSyntax     || '',
+        isDeprecated:  !!e.deprecated,
+        records:       e.records       || [],
+        localTags:     e.localTags     || [],
+        reverseRefs:   e.reverseRefs   || [],
+        normUL,
+        org:           orgForNormUL(normUL),   // null or {name, cls}
+        fullLower:     (e.text || '').toLowerCase(),
+        nameLower:     (e.name       || '').toLowerCase(),
+        symbolLower:   (e.symbol     || '').toLowerCase(),
+        ulLower:       (e.ul         || '').toLowerCase(),
+        defLower:      (e.definition || '').toLowerCase(),
+      };
+    });
+
+    const registers = [...new Set(allEntries.map(e => e.register))];
+    const IDLE_STATUS = `${allEntries.length.toLocaleString()} entries across ${registers.length} registers. Type to search.`;
+    statusEl.textContent = IDLE_STATUS;
+
+    // --- Filter state (rebuilt only on change, not every keystroke) ---
+    const filterCheckboxes = [...document.querySelectorAll('#filters input[type=checkbox][value]')];
+    const hideDepCb = document.getElementById('hide-deprecated');
+    let enabledRegs = new Set(filterCheckboxes.filter(cb => cb.checked).map(cb => cb.value));
+    let hideDep = hideDepCb.checked;
+
+    // --- HTML helpers ---
+    function escHtml(s) {
+      return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    // Highlight literal query matches in text, correctly handling HTML-special characters.
+    function hl(text, q) {
+      if (!q || !text) return escHtml(text);
+      const re = new RegExp(escRegex(q), 'gi');
+      let result = '';
+      let last = 0;
+      let m;
+      while ((m = re.exec(String(text))) !== null) {
+        result += escHtml(text.slice(last, m.index));
+        result += `<mark>${escHtml(m[0])}</mark>`;
+        last = m.index + m[0].length;
+      }
+      return result + escHtml(text.slice(last));
+    }
+
+    // Per SMPTE ST 298 / ST 336 (1-indexed byte numbers matching SMPTE documentation)
+    const UL_BYTE_INFO = [
+      { name: 'Object Identifier',  desc: 'ASN.1 OID prefix (fixed: 06)',                    fixed: true  },
+      { name: 'Label Size',         desc: 'Remaining label length (fixed: 0e = 14 bytes)',    fixed: true  },
+      { name: 'ISO Prefix',         desc: 'ISO/IEC designation (fixed: 2b)',                  fixed: true  },
+      { name: 'SMPTE Designation',  desc: 'SMPTE organization code (fixed: 34)',              fixed: true  },
+      { name: 'Category',           desc: 'Registry category designator (7f = any, wildcard)',wildcard: true },
+      { name: 'Registry',           desc: 'Registry/version designator (7f = any, wildcard)', wildcard: true },
+      { name: 'Structure',          desc: 'Registry structure designator (7f = any, wildcard)',wildcard: true },
+      { name: 'Version',            desc: 'Registry version number (7f = any, wildcard)',     wildcard: true },
+      { name: 'Org Class',          desc: '0d = Class 13 Public Use, 0e = Class 14 Private Use, other = SMPTE standard' },
+      { name: 'Org ID',             desc: 'Organization identifier — see SMPTE-RA Class 13/14 registrations' },
+      { name: 'Item [11]',          desc: 'Item-specific designator byte 11 — literal'        },
+      { name: 'Item [12]',          desc: 'Item-specific designator byte 12 — literal'        },
+      { name: 'Item [13]',          desc: 'Item-specific designator byte 13 — literal'        },
+      { name: 'Item [14]',          desc: 'Item-specific designator byte 14 — literal'        },
+      { name: 'Item [15]',          desc: 'Item-specific designator byte 15 — literal'        },
+      { name: 'Item [16]',          desc: 'Item-specific designator byte 16 — literal'        },
+    ];
+
+    function renderUL(ul, normQuery) {
+      const prefix = 'urn:smpte:ul:';
+      if (!ul.startsWith(prefix)) return escHtml(ul);
+      const groups = ul.slice(prefix.length).split('.');
+      if (groups.length !== 4 || groups.some(g => g.length !== 8)) return escHtml(ul);
+
+      const normUL = groups.join(''); // 32 hex chars, no separators
+
+      // Find which byte indices the normQuery matches (for hex highlight)
+      const highlightedBytes = new Set();
+      if (normQuery && normQuery.length >= 2) {
+        let pos = 0;
+        while (pos <= normUL.length - normQuery.length) {
+          const idx = normUL.indexOf(normQuery, pos);
+          if (idx === -1) break;
+          const start = Math.floor(idx / 2);
+          const end   = Math.ceil((idx + normQuery.length) / 2);
+          for (let b = start; b < end; b++) highlightedBytes.add(b);
+          pos = idx + 2; // advance by one byte to catch overlapping matches
+        }
+      }
+
+      const org = orgForNormUL(normUL);
+
+      let html = `<span class="ul-pfx">${escHtml(prefix)}</span>`;
+      for (let b = 0; b < 16; b++) {
+        if (b > 0 && b % 4 === 0) html += '<span class="ul-dot">.</span>';
+        const byteHex = normUL.substring(b * 2, b * 2 + 2);
+        const info    = UL_BYTE_INFO[b];
+
+        // Dynamic tooltip: enrich bytes 8-9 with org registry info
+        let desc = info.desc;
+        if (b === 8) {
+          if      (byteHex === '0d') desc = 'Class 13 — Public Use registrations';
+          else if (byteHex === '0e') desc = 'Class 14 — Private Use registrations';
+        } else if (b === 9 && org) {
+          desc = `${org.name} (Class ${org.cls})`;
+        }
+        const tooltip = `Byte ${b + 1}: ${info.name} — ${desc}`;
+
+        let cls;
+        if (info.fixed) {
+          cls = 'ul-fixed';
+        } else if (info.wildcard) {
+          cls = byteHex === '7f' ? 'ul-wc-active' : 'ul-wc-range';
+        } else {
+          cls = 'ul-item';
+        }
+
+        const content = highlightedBytes.has(b)
+          ? `<mark>${escHtml(byteHex)}</mark>`
+          : escHtml(byteHex);
+
+        html += `<span class="${cls}" title="${escHtml(tooltip)}">${content}</span>`;
+      }
+      return html;
+    }
+
+    function renderDetails(e, normQuery) {
+      // --- Section 0: Organization (Class 13/14) ---
+      const org = e.org;
+      const orgSection = org ? `<div class="details-section">
+        <h4>SMPTE-RA Registration (Class ${org.cls})</h4>
+        <table class="details-table"><tbody>
+          <tr><th>Organization</th><td>${escHtml(org.name)}</td></tr>
+          <tr><th>Class</th><td>${org.cls === 13 ? '13 — Public Use' : '14 — Private Use'}</td></tr>
+          <tr><th>Org bytes (8–9)</th><td class="mono">${escHtml(e.normUL.substring(16, 20))}</td></tr>
+        </tbody></table>
+      </div>` : '';
+
+      // --- Section 1: UL byte-by-byte table ---
+      const prefix = 'urn:smpte:ul:';
+      const groups = e.ul.startsWith(prefix) ? e.ul.slice(prefix.length).split('.') : null;
+      const normUL = (groups && groups.length === 4 && groups.every(g => g.length === 8))
+        ? groups.join('') : null;
+
+      let ulSection = '';
+      if (normUL) {
+        const rows = UL_BYTE_INFO.map((info, b) => {
+          const val = normUL.substring(b * 2, b * 2 + 2);
+          const isActiveWildcard = info.wildcard && val === '7f';
+          const rowCls = info.fixed ? 'byte-fixed'
+                       : info.wildcard ? (isActiveWildcard ? 'byte-wc-active' : 'byte-wc')
+                       : 'byte-item';
+          const note = isActiveWildcard ? ' <em>— wildcard, matches any value</em>' : '';
+          return `<tr class="${rowCls}">
+              <td class="mono">${b + 1}</td>
+              <td class="mono">${escHtml(val)}</td>
+              <td>${escHtml(info.name)}</td>
+              <td>${escHtml(info.desc)}${note}</td>
+            </tr>`;
+        }).join('');
+        ulSection = `<div class="details-section">
+          <h4>UL Structure — SMPTE ST 336 (bytes 1–16)</h4>
+          <table class="details-table">
+            <thead><tr><th>#</th><th>Value</th><th>Field</th><th>Description</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>`;
+      }
+
+      // --- Section 2: Registry fields ---
+      const fields = [
+        ['Register',          e.register],
+        ['Namespace',         e.namespaceName],
+        ['Symbol',            e.symbol],
+        ['Kind',              e.kind],
+        ['Defining Document', e.defDoc],
+        ['Definition',        e.definition],
+        ['Deprecated',        e.isDeprecated ? 'Yes' : 'No'],
+        e.isConcrete ? ['Concrete', e.isConcrete] : null,
+        e.klvSyntax  ? ['KLV Syntax', `0x${e.klvSyntax}`] : null,
+      ].filter(f => f && f[1]);
+      const fieldRows = fields.map(([k, v]) =>
+        `<tr><th>${escHtml(k)}</th><td>${escHtml(v)}</td></tr>`
+      ).join('');
+      const fieldSection = `<div class="details-section">
+        <h4>Registry Fields</h4>
+        <table class="details-table"><tbody>${fieldRows}</tbody></table>
+      </div>`;
+
+      // --- Section 3: Contents / Records ---
+      let recordsSection = '';
+      if (e.records.length) {
+        const recRows = e.records.map(r => {
+          const resolvedName = allEntries.find(x => x.ul === r.ul)?.name || '';
+          return `<tr>
+              <td class="mono">${escHtml(r.localTag)}</td>
+              <td class="card-ul" style="font-size:0.68rem">${renderUL(r.ul, normQuery)}</td>
+              <td>${escHtml(resolvedName)}</td>
+              <td>${r.isOptional ? 'optional' : 'required'}</td>
+            </tr>`;
+        }).join('');
+        recordsSection = `<div class="details-section">
+          <h4>Contents (${e.records.length} records)</h4>
+          <table class="details-table">
+            <thead><tr><th>LocalTag</th><th>UL</th><th>Element Name</th><th>Optional</th></tr></thead>
+            <tbody>${recRows}</tbody>
+          </table>
+        </div>`;
+      }
+
+      // --- Section 4: Reverse references ---
+      let refsSection = '';
+      if (e.reverseRefs.length) {
+        const refRows = e.reverseRefs.map(r =>
+          `<tr>
+              <td class="mono">${escHtml(r.localTag)}</td>
+              <td>${escHtml(r.parentName)}</td>
+              <td><span class="badge b-reg" style="font-size:0.65rem">${escHtml(r.parentRegister)}</span></td>
+            </tr>`
+        ).join('');
+        refsSection = `<div class="details-section">
+          <h4>Referenced by (${e.reverseRefs.length} entries)</h4>
+          <table class="details-table">
+            <thead><tr><th>LocalTag</th><th>Parent Entry</th><th>Register</th></tr></thead>
+            <tbody>${refRows}</tbody>
+          </table>
+        </div>`;
+      }
+
+      return `<details class="entry-details">
+        <summary>Details</summary>
+        <div class="details-content">
+          ${orgSection}${ulSection}${fieldSection}${recordsSection}${refsSection}
+        </div>
+      </details>`;
+    }
+
+    function getMatchHints(e, queryLower, normQuery, wildcardMatch) {
+      const hints = [];
+      if (e.nameLower.includes(queryLower))   hints.push('name');
+      if (e.symbolLower.includes(queryLower)) hints.push('symbol');
+      if (e.defLower.includes(queryLower))    hints.push('definition');
+      // UL hint only shown when query is hex-like to avoid false positives
+      if (normQuery && e.ulLower.includes(queryLower)) hints.push('UL');
+      if (wildcardMatch) hints.push('UL (wildcard variant)');
+      if (e.org && e.org.name.toLowerCase().includes(queryLower)) hints.push(`Organization: ${e.org.name}`);
+
+      const matchingTags = e.localTags.filter(t => t.toLowerCase().includes(queryLower));
+      if (matchingTags.length) hints.push(`LocalTag: ${matchingTags.join(', ')}`);
+
+      const matchingRefs = e.reverseRefs.filter(r =>
+        r.localTag.toLowerCase().includes(queryLower) ||
+        r.parentName.toLowerCase().includes(queryLower)
+      );
+      if (matchingRefs.length) {
+        hints.push(`Referenced by: ${matchingRefs.map(r => `${r.localTag} in ${r.parentName}`).join('; ')}`);
+      }
+      return hints;
+    }
+
+    function renderCard(e, rawQuery, normQuery, queryLower, wildcardMatch) {
+      const dep = e.isDeprecated ? ' deprecated' : '';
+      const hints = getMatchHints(e, queryLower, normQuery, wildcardMatch);
+      const hintsHtml = hints.length
+        ? `<div class="card-hints">${hints.map(h => `<span class="hint">${escHtml(h)}</span>`).join('')}</div>`
+        : '';
+      return `<div class="result-card${dep}">
+  <div class="card-top">
+    <span class="card-name">${hl(e.name, rawQuery)}</span>
+    <span class="card-ul">${renderUL(e.ul, normQuery)}</span>
+  </div>
+  <div class="card-meta">
+    <span class="badge b-reg">${escHtml(e.register)}</span>
+    ${e.kind ? `<span class="badge b-kind">${escHtml(e.kind)}</span>` : ''}
+    ${e.isDeprecated ? '<span class="badge b-dep">Deprecated</span>' : ''}
+    ${e.symbol ? `<span class="card-symbol">${hl(e.symbol, rawQuery)}</span>` : ''}
+    ${e.defDoc  ? `<span class="card-doc">${hl(e.defDoc, rawQuery)}</span>` : ''}
+  </div>
+  ${hintsHtml}
+  ${e.definition ? `<div class="card-def">${hl(e.definition, rawQuery)}</div>` : ''}
+  ${renderDetails(e, normQuery)}
+</div>`;
+    }
+
+    function renderUnregisteredUL(normUL) {
+      const ulStr = `urn:smpte:ul:${normUL.slice(0,8)}.${normUL.slice(8,16)}.${normUL.slice(16,24)}.${normUL.slice(24,32)}`;
+      const org = orgForNormUL(normUL);
+      const privateEntry = (window.PRIVATE_ULS && window.PRIVATE_ULS[normUL]) || null;
+
+      const orgSection = org ? `<div class="details-section">
+        <h4>SMPTE-RA Registration (Class ${org.cls})</h4>
+        <table class="details-table"><tbody>
+          <tr><th>Organization</th><td>${escHtml(org.name)}</td></tr>
+          <tr><th>Class</th><td>${org.cls === 13 ? '13 — Public Use' : '14 — Private Use'}</td></tr>
+          <tr><th>Org bytes (8–9)</th><td class="mono">${escHtml(normUL.substring(16, 20))}</td></tr>
+        </tbody></table>
+      </div>` : '';
+
+      const privateSection = privateEntry ? `<div class="details-section">
+        <h4>Known Private UL Definition</h4>
+        <table class="details-table"><tbody>
+          <tr><th>Name</th><td><strong>${escHtml(privateEntry.name)}</strong></td></tr>
+          <tr><th>Category</th><td>${escHtml(privateEntry.category)}</td></tr>
+          ${privateEntry.sources ? `<tr><th>Sources</th><td><ul style="margin:0;padding-left:1.5em">${privateEntry.sources.map(s => `<li style="margin:2px 0">${escHtml(s)}</li>`).join('')}</ul></td></tr>` : ''}
+        </tbody></table>
+      </div>` : '';
+
+      const rows = UL_BYTE_INFO.map((info, b) => {
+        const val = normUL.substring(b * 2, b * 2 + 2);
+        const isActiveWildcard = info.wildcard && val === '7f';
+        const rowCls = info.fixed ? 'byte-fixed'
+                     : info.wildcard ? (isActiveWildcard ? 'byte-wc-active' : 'byte-wc')
+                     : 'byte-item';
+        const note = isActiveWildcard ? ' <em>— wildcard, matches any value</em>' : '';
+        return `<tr class="${rowCls}">
+            <td class="mono">${b + 1}</td>
+            <td class="mono">${escHtml(val)}</td>
+            <td>${escHtml(info.name)}</td>
+            <td>${escHtml(info.desc)}${note}</td>
+          </tr>`;
+      }).join('');
+      const ulSection = `<div class="details-section">
+        <h4>UL Structure — SMPTE ST 336 (bytes 1–16)</h4>
+        <table class="details-table">
+          <thead><tr><th>#</th><th>Value</th><th>Field</th><th>Description</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>`;
+
+      const orgNote = org
+        ? ` It belongs to the Class ${org.cls} (${org.cls === 13 ? 'Public Use' : 'Private Use'}) space registered to <strong>${escHtml(org.name)}</strong>.`
+        : '';
+      const desc = privateEntry
+        ? `This UL is a known Class ${org?.cls} private definition: <strong>${escHtml(privateEntry.name)}</strong>.`
+        : `This UL is not present in the SMPTE public register XML files.${orgNote}`;
+
+      return `<div class="result-card unregistered">
+  <div class="card-top">
+    <span class="card-name">${privateEntry ? escHtml(privateEntry.name) : `Unregistered UL${org ? ` — ${escHtml(org.name)}` : ''}`}</span>
+    <span class="card-ul">${renderUL(ulStr, '')}</span>
+  </div>
+  <div class="card-meta">
+    ${privateEntry ? `<span class="badge" style="background:#d1fae5;color:#047857">Private Definition Found</span>` : `<span class="badge b-dep">Not in public registers</span>`}
+    ${org ? `<span class="badge b-reg">Class ${org.cls} — ${escHtml(org.name)}</span>` : ''}
+  </div>
+  <div class="card-def">${desc}</div>
+  <details class="entry-details">
+    <summary>Details</summary>
+    <div class="details-content">${privateSection}${orgSection}${ulSection}</div>
+  </details>
+</div>`;
+    }
+
+    // --- Search ---
+    const MAX_DISPLAY = 250;
+
+    function runSearch() {
+      const raw = queryEl.value.trim();
+
+      if (!raw) {
+        resultsEl.innerHTML = '';
+        moreEl.style.display = 'none';
+        statusEl.textContent = IDLE_STATUS;
+        statusEl.className = '';
+        return;
+      }
+
+      const queryLower = raw.toLowerCase();
+      const normQuery  = looksLikeHex(raw) ? normalizeHex(raw) : '';
+      const doWildcard = normQuery.length >= 16;
+
+      const matches = [];
+      for (const e of allEntries) {
+        if (!enabledRegs.has(e.register)) continue;
+        if (hideDep && e.isDeprecated)    continue;
+
+        let wildcardMatch = false;
+        if (normQuery) {
+          if (e.normUL.includes(normQuery)) { matches.push({ e, wildcardMatch: false }); continue; }
+          if (doWildcard && ulMatchesWithWildcard(normQuery, e.normUL)) wildcardMatch = true;
+        }
+        const orgMatch = e.org && e.org.name.toLowerCase().includes(queryLower);
+        if (wildcardMatch || orgMatch || e.fullLower.includes(queryLower)) matches.push({ e, wildcardMatch });
+      }
+
+      statusEl.textContent = `${matches.length.toLocaleString()} result${matches.length !== 1 ? 's' : ''}`;
+      statusEl.className = '';
+
+      const unregisteredCard = (normQuery.length === 32 && matches.length === 0)
+        ? renderUnregisteredUL(normQuery) : '';
+
+      const slice = matches.slice(0, MAX_DISPLAY);
+      resultsEl.innerHTML = unregisteredCard + slice.map(({ e, wildcardMatch }) =>
+        renderCard(e, raw, normQuery, queryLower, wildcardMatch)
+      ).join('\n');
+
+      moreEl.style.display = matches.length > MAX_DISPLAY ? '' : 'none';
+      if (matches.length > MAX_DISPLAY) {
+        moreEl.textContent = `Showing first ${MAX_DISPLAY} of ${matches.length.toLocaleString()} results — refine your query to narrow down.`;
+      }
+    }
+
+    // Populate organization registry with all orgs and their UL counts
+    populateOrgRegistry();
+
+    let debounce;
+    queryEl.addEventListener('input', () => {
+      clearTimeout(debounce);
+      debounce = setTimeout(runSearch, 180);
+    });
+    filterCheckboxes.forEach(el => el.addEventListener('change', () => {
+      enabledRegs = new Set(filterCheckboxes.filter(cb => cb.checked).map(cb => cb.value));
+      runSearch();
+    }));
+    hideDepCb.addEventListener('change', () => { hideDep = hideDepCb.checked; runSearch(); });
+  </script>
+</body>
+</html>
