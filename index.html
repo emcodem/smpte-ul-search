@@ -107,6 +107,8 @@
     .ul-wc-active { color: #d97706; font-weight: 700; cursor: help; }
     /* bytes 8-15: item designators — literal values */
     .ul-item { color: #444; cursor: help; }
+    /* non-matched bytes when a query is active */
+    .ul-dim { color: #ccc !important; }
 
     .card-meta {
       display: flex;
@@ -133,9 +135,12 @@
       text-transform: uppercase;
       white-space: nowrap;
     }
-    .b-reg  { background: #dbeafe; color: #1d4ed8; }
-    .b-kind { background: #dcfce7; color: #15803d; }
-    .b-dep  { background: #fee2e2; color: #b91c1c; }
+    .b-reg     { background: #dbeafe; color: #1d4ed8; }
+    .b-kind    { background: #dcfce7; color: #15803d; }
+    .b-dep     { background: #fee2e2; color: #b91c1c; }
+    .b-ul-direct  { background: #d1fae5; color: #065f46; }
+    .b-ul-wc      { background: #fef3c7; color: #92400e; }
+    .b-ul-prefix  { background: #e0e7ff; color: #3730a3; }
 
     mark { background: #fde68a; border-radius: 2px; padding: 0 1px; font-style: normal; }
 
@@ -223,58 +228,6 @@
     .details-table tr.byte-item td  { color: #444; }
     .details-table td.mono { font-family: "SFMono-Regular", Consolas, monospace; }
 
-    #org-registry {
-      background: white;
-      border: 1px solid #e0e4ec;
-      border-radius: 8px;
-      margin-bottom: 1rem;
-      overflow: hidden;
-    }
-    #org-registry summary {
-      padding: 0.8rem 1rem;
-      cursor: pointer;
-      font-weight: 600;
-      background: #f8f9fb;
-      border-bottom: 1px solid #e0e4ec;
-      user-select: none;
-    }
-    #org-registry summary:hover { background: #eef2ff; }
-    #org-registry-content {
-      padding: 0.8rem 0;
-    }
-    .org-table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 0.875rem;
-    }
-    .org-table th {
-      padding: 0.6rem 1rem;
-      text-align: left;
-      font-weight: 600;
-      color: #666;
-      background: #f8f9fb;
-      border-bottom: 1px solid #e0e4ec;
-      white-space: nowrap;
-    }
-    .org-table td {
-      padding: 0.5rem 1rem;
-      border-bottom: 1px solid #f0f2f5;
-    }
-    .org-table tr:hover { background: #fafbfc; }
-    .org-name {
-      color: #2563eb;
-      cursor: pointer;
-      text-decoration: none;
-      font-weight: 500;
-    }
-    .org-name:hover { text-decoration: underline; }
-    .org-class { text-align: center; font-weight: 600; }
-    .org-class.cls13 { color: #059669; }
-    .org-class.cls14 { color: #dc2626; }
-    .org-docs { text-align: center; }
-    .org-docs.documented { color: #059669; font-weight: 600; }
-    .org-docs.partial { color: #d97706; }
-    .org-docs.none { color: #999; }
   </style>
 </head>
 <body>
@@ -318,24 +271,7 @@
     <label id="hide-dep-wrap"><input type="checkbox" id="hide-deprecated"> Hide deprecated</label>
   </div>
 
-  <details id="org-registry">
-    <summary>SMPTE-RA Class 13/14 Organization Registry</summary>
-    <div id="org-registry-content">
-      <table class="org-table">
-        <thead>
-          <tr>
-            <th>Organization</th>
-            <th class="org-class">Class</th>
-            <th class="org-docs">Known ULs</th>
-          </tr>
-        </thead>
-        <tbody id="org-table-body">
-        </tbody>
-      </table>
-    </div>
-  </details>
-
-  <div id="status"></div>
+<div id="status"></div>
   <div id="results"></div>
   <div id="more-note" style="display:none"></div>
 
@@ -346,6 +282,7 @@
     function normalizeHex(s) {
       return s
         .replace(/^urn:smpte:ul:/i, '')
+        .replace(/\\x/gi, '')
         .replace(/0x/gi, '')
         .replace(/[^0-9a-f]/gi, '')
         .toLowerCase();
@@ -376,33 +313,27 @@
       return true;
     }
 
+    // Prefix variant: searchHex may be shorter than a full 32-char UL.
+    // Triggered when the query starts with 060e2b34 and extends into the wildcard zone (bytes 4-7).
+    function ulPrefixMatchWithWildcard(searchHex, entryUL) {
+      const len = searchHex.length - (searchHex.length % 2);
+      for (let i = 0; i < len; i += 2) {
+        const bytePos = i / 2;
+        const a = searchHex.substring(i, i + 2);
+        const b = entryUL.substring(i, i + 2);
+        if (bytePos >= 4 && bytePos <= 7 && (a === '7f' || b === '7f')) continue;
+        if (a !== b) return false;
+      }
+      return true;
+    }
+
     const ORG_REGISTRY = window.ORG_REGISTRY;
 
     function orgForNormUL(normUL) {
       return normUL.length >= 20 ? (ORG_REGISTRY[normUL.substring(16, 20)] || null) : null;
     }
 
-    function populateOrgRegistry() {
-      const tbody = document.getElementById('org-table-body');
-      const privateULs = window.PRIVATE_ULS || {};
-
-      const rows = Object.entries(ORG_REGISTRY).map(([key, org]) => {
-        const ulsForOrg = Object.values(privateULs).filter(ul => ul.org === org.name).length;
-        const classCls = org.cls === 13 ? 'cls13' : 'cls14';
-        const docsCls = ulsForOrg > 0 ? (ulsForOrg >= 3 ? 'documented' : 'partial') : 'none';
-        const docsText = ulsForOrg > 0 ? `${ulsForOrg}` : '—';
-
-        return `<tr>
-          <td><a class="org-name" onclick="document.getElementById('query').value='${org.name}'; runSearch(); window.scrollTo(0,0); return false;">${escHtml(org.name)}</a></td>
-          <td class="org-class ${classCls}">${org.cls}</td>
-          <td class="org-docs ${docsCls}">${docsText}</td>
-        </tr>`;
-      }).join('');
-
-      tbody.innerHTML = rows;
-    }
-
-    // --- Init ---
+// --- Init ---
     const statusEl  = document.getElementById('status');
     const resultsEl = document.getElementById('results');
     const moreEl    = document.getElementById('more-note');
@@ -503,17 +434,25 @@
 
       const normUL = groups.join(''); // 32 hex chars, no separators
 
-      // Find which byte indices the normQuery matches (for hex highlight)
+      // Find which byte indices the normQuery matches (for bold highlight).
+      // For SMPTE prefix queries (starting 060e2b34) mark all bytes the query covers,
+      // since wildcard bytes in positions 4-7 mean the substring won't appear literally.
+      // For other hex queries fall back to substring search.
       const highlightedBytes = new Set();
       if (normQuery && normQuery.length >= 2) {
-        let pos = 0;
-        while (pos <= normUL.length - normQuery.length) {
-          const idx = normUL.indexOf(normQuery, pos);
-          if (idx === -1) break;
-          const start = Math.floor(idx / 2);
-          const end   = Math.ceil((idx + normQuery.length) / 2);
-          for (let b = start; b < end; b++) highlightedBytes.add(b);
-          pos = idx + 2; // advance by one byte to catch overlapping matches
+        if (normQuery.startsWith('060e2b34')) {
+          const byteCount = Math.floor(normQuery.length / 2);
+          for (let b = 0; b < byteCount; b++) highlightedBytes.add(b);
+        } else {
+          let pos = 0;
+          while (pos <= normUL.length - normQuery.length) {
+            const idx = normUL.indexOf(normQuery, pos);
+            if (idx === -1) break;
+            const start = Math.floor(idx / 2);
+            const end   = Math.ceil((idx + normQuery.length) / 2);
+            for (let b = start; b < end; b++) highlightedBytes.add(b);
+            pos = idx + 2;
+          }
         }
       }
 
@@ -535,17 +474,22 @@
         }
         const tooltip = `Byte ${b + 1}: ${info.name} — ${desc}`;
 
+        const isActiveWildcard = info.wildcard && byteHex === '7f';
+        const isMatched = highlightedBytes.has(b);
+        const isDimmed  = highlightedBytes.size > 0 && !isMatched && !isActiveWildcard;
+
         let cls;
         if (info.fixed) {
           cls = 'ul-fixed';
         } else if (info.wildcard) {
-          cls = byteHex === '7f' ? 'ul-wc-active' : 'ul-wc-range';
+          cls = isActiveWildcard ? 'ul-wc-active' : 'ul-wc-range';
         } else {
           cls = 'ul-item';
         }
+        if (isDimmed) cls += ' ul-dim';
 
-        const content = highlightedBytes.has(b)
-          ? `<mark>${escHtml(byteHex)}</mark>`
+        const content = (isMatched && !isActiveWildcard)
+          ? `<strong>${escHtml(byteHex)}</strong>`
           : escHtml(byteHex);
 
         html += `<span class="${cls}" title="${escHtml(tooltip)}">${content}</span>`;
@@ -664,14 +608,11 @@
       </details>`;
     }
 
-    function getMatchHints(e, queryLower, normQuery, wildcardMatch) {
+    function getMatchHints(e, queryLower, normQuery, directULMatch, wildcardMatch) {
       const hints = [];
       if (e.nameLower.includes(queryLower))   hints.push('name');
       if (e.symbolLower.includes(queryLower)) hints.push('symbol');
       if (e.defLower.includes(queryLower))    hints.push('definition');
-      // UL hint only shown when query is hex-like to avoid false positives
-      if (normQuery && e.ulLower.includes(queryLower)) hints.push('UL');
-      if (wildcardMatch) hints.push('UL (wildcard variant)');
       if (e.org && e.org.name.toLowerCase().includes(queryLower)) hints.push(`Organization: ${e.org.name}`);
 
       const matchingTags = e.localTags.filter(t => t.toLowerCase().includes(queryLower));
@@ -687,9 +628,10 @@
       return hints;
     }
 
-    function renderCard(e, rawQuery, normQuery, queryLower, wildcardMatch) {
+    function renderCard(e, rawQuery, normQuery, queryLower, directULMatch, wildcardMatch) {
       const dep = e.isDeprecated ? ' deprecated' : '';
-      const hints = getMatchHints(e, queryLower, normQuery, wildcardMatch);
+      const isPrefixMatch = (directULMatch || wildcardMatch) && normQuery.length > 0 && normQuery.length < 32;
+      const hints = getMatchHints(e, queryLower, normQuery, directULMatch, wildcardMatch);
       const hintsHtml = hints.length
         ? `<div class="card-hints">${hints.map(h => `<span class="hint">${escHtml(h)}</span>`).join('')}</div>`
         : '';
@@ -702,6 +644,9 @@
     <span class="badge b-reg">${escHtml(e.register)}</span>
     ${e.kind ? `<span class="badge b-kind">${escHtml(e.kind)}</span>` : ''}
     ${e.isDeprecated ? '<span class="badge b-dep">Deprecated</span>' : ''}
+    ${directULMatch ? `<span class="badge b-ul-direct" title="The query bytes match this UL exactly (literal substring match).">UL direct</span>` : ''}
+    ${wildcardMatch ? `<span class="badge b-ul-wc" title="The query bytes match this UL only after treating bytes 5–8 (registry designators) as wildcards — a 7f in either the query or the entry at those positions is accepted as a match for any value.">UL wildcard</span>` : ''}
+    ${isPrefixMatch ? `<span class="badge b-ul-prefix" title="Your query is ${normQuery.length / 2} of 16 bytes — this entry matched on the leading bytes only. Remaining bytes (shown greyed in the UL above) were not part of the query. Add more bytes to narrow to a unique entry.">UL prefix</span>` : ''}
     ${e.symbol ? `<span class="card-symbol">${hl(e.symbol, rawQuery)}</span>` : ''}
     ${e.defDoc  ? `<span class="card-doc">${hl(e.defDoc, rawQuery)}</span>` : ''}
   </div>
@@ -796,20 +741,28 @@
 
       const queryLower = raw.toLowerCase();
       const normQuery  = looksLikeHex(raw) ? normalizeHex(raw) : '';
-      const doWildcard = normQuery.length >= 16;
+      // Apply wildcard matching for any query that begins with the SMPTE OID prefix,
+      // since bytes 5-8 (registry designators) may be 7f in stored entries.
+      const doWildcard = normQuery.startsWith('060e2b34');
 
       const matches = [];
       for (const e of allEntries) {
         if (!enabledRegs.has(e.register)) continue;
         if (hideDep && e.isDeprecated)    continue;
 
+        let directULMatch = false;
         let wildcardMatch = false;
         if (normQuery) {
-          if (e.normUL.includes(normQuery)) { matches.push({ e, wildcardMatch: false }); continue; }
-          if (doWildcard && ulMatchesWithWildcard(normQuery, e.normUL)) wildcardMatch = true;
+          directULMatch = e.normUL.includes(normQuery);
+          if (!directULMatch && doWildcard) {
+            const matchFn = normQuery.length < 32 ? ulPrefixMatchWithWildcard : ulMatchesWithWildcard;
+            wildcardMatch = matchFn(normQuery, e.normUL);
+          }
         }
         const orgMatch = e.org && e.org.name.toLowerCase().includes(queryLower);
-        if (wildcardMatch || orgMatch || e.fullLower.includes(queryLower)) matches.push({ e, wildcardMatch });
+        if (directULMatch || wildcardMatch || orgMatch || e.fullLower.includes(queryLower)) {
+          matches.push({ e, directULMatch, wildcardMatch });
+        }
       }
 
       statusEl.textContent = `${matches.length.toLocaleString()} result${matches.length !== 1 ? 's' : ''}`;
@@ -819,8 +772,8 @@
         ? renderUnregisteredUL(normQuery) : '';
 
       const slice = matches.slice(0, MAX_DISPLAY);
-      resultsEl.innerHTML = unregisteredCard + slice.map(({ e, wildcardMatch }) =>
-        renderCard(e, raw, normQuery, queryLower, wildcardMatch)
+      resultsEl.innerHTML = unregisteredCard + slice.map(({ e, directULMatch, wildcardMatch }) =>
+        renderCard(e, raw, normQuery, queryLower, directULMatch, wildcardMatch)
       ).join('\n');
 
       moreEl.style.display = matches.length > MAX_DISPLAY ? '' : 'none';
@@ -828,9 +781,6 @@
         moreEl.textContent = `Showing first ${MAX_DISPLAY} of ${matches.length.toLocaleString()} results — refine your query to narrow down.`;
       }
     }
-
-    // Populate organization registry with all orgs and their UL counts
-    populateOrgRegistry();
 
     let debounce;
     queryEl.addEventListener('input', () => {
