@@ -327,6 +327,21 @@
       return true;
     }
 
+    // Essence element wildcard (SMPTE ST 2088): 7f in any byte position after the fixed
+    // 4-byte SMPTE prefix is a wildcard. Applies only when matching against Essence register
+    // entries, since other registers treat 7f as a literal value in item-designator bytes.
+    function ulMatchesEssenceWildcard(searchUL, entryUL) {
+      if (searchUL.length !== 32 || entryUL.length !== 32) return false;
+      for (let i = 0; i < 32; i += 2) {
+        const a = searchUL.substring(i, i + 2);
+        const b = entryUL.substring(i, i + 2);
+        if (i < 8) { if (a !== b) return false; continue; }
+        if (a === '7f' || b === '7f') continue;
+        if (a !== b) return false;
+      }
+      return true;
+    }
+
     const ORG_REGISTRY = window.ORG_REGISTRY;
 
     function orgForNormUL(normUL) {
@@ -679,6 +694,55 @@
         </tbody></table>
       </div>` : '';
 
+      // Essence element resolution (SMPTE ST 2088 / ST 379)
+      // Byte 5 (0-indexed 4) = 01 identifies essence element keys.
+      // Bytes 13–14 (0-indexed 12–13) = item_type / element_type — the meaningful descriptor.
+      // Bytes 15–16 (0-indexed 14–15) = count / item_length — per-track, vary across instances.
+      let essenceSection = '';
+      if (normUL.startsWith('060e2b34') && normUL.substring(8, 10) === '01') {
+        // Look up the item-type NODE: bytes 1–13 match, bytes 14–16 are zeroed in NODE entries.
+        const itemTypeKey = normUL.substring(0, 26) + '000000';
+        const itemTypeEntry = allEntries.find(e => e.register === 'Essence' && e.normUL === itemTypeKey);
+
+        // Find LEAF entries that match with 7f-wildcard in all item-designator bytes.
+        const leafMatches = allEntries.filter(e =>
+          e.register === 'Essence' && e.kind === 'LEAF' &&
+          ulMatchesEssenceWildcard(normUL, e.normUL)
+        );
+
+        const itemTypeName = itemTypeEntry ? itemTypeEntry.name : `unknown (0x${normUL.substring(24, 26)})`;
+        const elTypeByte  = normUL.substring(26, 28);
+        const countByte   = normUL.substring(28, 30);
+        const lenByte     = normUL.substring(30, 32);
+
+        const leafRows = leafMatches.map(e => `<tr>
+          <td>${escHtml(e.name)}</td>
+          <td class="mono">${escHtml(e.normUL.substring(24))}</td>
+          <td>${escHtml(e.symbol)}</td>
+          <td>${escHtml(e.defDoc)}</td>
+        </tr>`).join('');
+
+        const matchTable = leafMatches.length
+          ? `<table class="details-table" style="margin-top:0.6rem">
+              <thead><tr><th>Name</th><th>Registered bytes 13–16</th><th>Symbol</th><th>Document</th></tr></thead>
+              <tbody>${leafRows}</tbody>
+            </table>`
+          : `<p style="margin:0.4rem 0 0;color:#666">No entries found in the Essence register for item/element type <code>${normUL.substring(24, 28)}</code>.</p>`;
+
+        essenceSection = `<div class="details-section">
+          <h4>Essence Element Key (SMPTE ST 2088 / ST 379)</h4>
+          <p style="margin:0 0 0.5rem">Bytes 13–14 identify the element type; bytes 15–16 carry per-track count and item-length that vary between instances.</p>
+          <table class="details-table"><tbody>
+            <tr><th>Item Type (byte 13)</th><td class="mono">${escHtml(normUL.substring(24, 26))}</td><td>${escHtml(itemTypeName)}</td></tr>
+            <tr><th>Element Type (byte 14)</th><td class="mono">${escHtml(elTypeByte)}</td><td>codec/format-specific sub-type</td></tr>
+            <tr><th>Count (byte 15)</th><td class="mono">${escHtml(countByte)}</td><td>per-track element count (instance-specific)</td></tr>
+            <tr><th>Item Length (byte 16)</th><td class="mono">${escHtml(lenByte)}</td><td>per-track item length (instance-specific)</td></tr>
+          </tbody></table>
+          <h4 style="margin-top:0.8rem">Matching Register Entries (bytes 15–16 as wildcards)</h4>
+          ${matchTable}
+        </div>`;
+      }
+
       const rows = UL_BYTE_INFO.map((info, b) => {
         const val = normUL.substring(b * 2, b * 2 + 2);
         const isActiveWildcard = info.wildcard && val === '7f';
@@ -701,26 +765,35 @@
         </table>
       </div>`;
 
+      const isEssenceElement = essenceSection !== '';
       const orgNote = org
         ? ` It belongs to the Class ${org.cls} (${org.cls === 13 ? 'Public Use' : 'Private Use'}) space registered to <strong>${escHtml(org.name)}</strong>.`
         : '';
       const desc = privateEntry
         ? `This UL is a known Class ${org?.cls} private definition: <strong>${escHtml(privateEntry.name)}</strong>.`
-        : `This UL is not present in the SMPTE public register XML files.${orgNote}`;
+        : isEssenceElement
+          ? `This UL is an MXF essence element key not present verbatim in the register. The element type is resolved below using bytes 13–14; bytes 15–16 are per-track and differ between instances.`
+          : `This UL is not present in the SMPTE public register XML files.${orgNote}`;
+
+      const cardTitle = privateEntry
+        ? escHtml(privateEntry.name)
+        : isEssenceElement
+          ? 'Essence Element Key (unregistered track number)'
+          : `Unregistered UL${org ? ` — ${escHtml(org.name)}` : ''}`;
 
       return `<div class="result-card unregistered">
   <div class="card-top">
-    <span class="card-name">${privateEntry ? escHtml(privateEntry.name) : `Unregistered UL${org ? ` — ${escHtml(org.name)}` : ''}`}</span>
+    <span class="card-name">${cardTitle}</span>
     <span class="card-ul">${renderUL(ulStr, '')}</span>
   </div>
   <div class="card-meta">
-    ${privateEntry ? `<span class="badge" style="background:#d1fae5;color:#047857">Private Definition Found</span>` : `<span class="badge b-dep">Not in public registers</span>`}
+    ${privateEntry ? `<span class="badge" style="background:#d1fae5;color:#047857">Private Definition Found</span>` : isEssenceElement ? `<span class="badge b-reg">Essence Element</span>` : `<span class="badge b-dep">Not in public registers</span>`}
     ${org ? `<span class="badge b-reg">Class ${org.cls} — ${escHtml(org.name)}</span>` : ''}
   </div>
   <div class="card-def">${desc}</div>
   <details class="entry-details">
     <summary>Details</summary>
-    <div class="details-content">${privateSection}${orgSection}${ulSection}</div>
+    <div class="details-content">${essenceSection}${privateSection}${orgSection}${ulSection}</div>
   </details>
 </div>`;
     }
@@ -757,6 +830,11 @@
           if (!directULMatch && doWildcard) {
             const matchFn = normQuery.length < 32 ? ulPrefixMatchWithWildcard : ulMatchesWithWildcard;
             wildcardMatch = matchFn(normQuery, e.normUL);
+            // For full essence element keys, also wildcard 7f in item-designator bytes (ST 2088)
+            if (!wildcardMatch && normQuery.length === 32 && normQuery.substring(8, 10) === '01' &&
+                e.register === 'Essence') {
+              wildcardMatch = ulMatchesEssenceWildcard(normQuery, e.normUL);
+            }
           }
         }
         const orgMatch = e.org && e.org.name.toLowerCase().includes(queryLower);
