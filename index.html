@@ -140,6 +140,7 @@
     .b-dep     { background: #fee2e2; color: #b91c1c; }
     .b-ul-direct  { background: #d1fae5; color: #065f46; }
     .b-ul-wc      { background: #fef3c7; color: #92400e; }
+    .b-ul-ewc     { background: #ffedd5; color: #9a3412; }
     .b-ul-prefix  { background: #e0e7ff; color: #3730a3; }
 
     mark { background: #fde68a; border-radius: 2px; padding: 0 1px; font-style: normal; }
@@ -335,7 +336,12 @@
       for (let i = 0; i < 32; i += 2) {
         const a = searchUL.substring(i, i + 2);
         const b = entryUL.substring(i, i + 2);
-        if (i < 8) { if (a !== b) return false; continue; }
+        // Bytes 1-8 (i < 16) are literal — bytes 1-4 fixed SMPTE prefix,
+        // bytes 5-8 are the fixed 01020101 essence element identifier.
+        if (i < 16) { if (a !== b) return false; continue; }
+        // Byte 14 (i=26, Essence Element Count) and byte 16 (i=30, Essence Element Number)
+        // are per-track values that vary between files — always masked per ST 379-2:2010 §10.1.
+        if (i === 26 || i === 30) continue;
         if (a === '7f' || b === '7f') continue;
         if (a !== b) return false;
       }
@@ -389,6 +395,20 @@
 
     const registers = [...new Set(allEntries.map(e => e.register))];
     const IDLE_STATUS = `${allEntries.length.toLocaleString()} entries across ${registers.length} registers. Type to search.`;
+
+    // Essence element lookup maps derived from LEAF register entries.
+    // ESSENCE_B14_NAMES keyed by bytes 13–14 (4 hex chars): element type / codec description.
+    // ESSENCE_B15_NAMES keyed by bytes 13–15 (6 hex chars): wrapping qualifier description.
+    // First LEAF match wins; used by essenceByteInfo() at render time via closure.
+    const ESSENCE_B14_NAMES = Object.create(null);
+    const ESSENCE_B15_NAMES = Object.create(null);
+    for (const _e of allEntries) {
+      if (_e.register !== 'Essence' || _e.normUL.length !== 32 || _e.kind !== 'LEAF') continue;
+      const _k14 = _e.normUL.substring(24, 28);
+      const _k15 = _e.normUL.substring(24, 30);
+      if (!ESSENCE_B14_NAMES[_k14]) ESSENCE_B14_NAMES[_k14] = _e.name;
+      if (!ESSENCE_B15_NAMES[_k15]) ESSENCE_B15_NAMES[_k15] = _e.name;
+    }
     statusEl.textContent = IDLE_STATUS;
 
     // --- Filter state (rebuilt only on change, not every keystroke) ---
@@ -441,6 +461,105 @@
       { name: 'Item [16]',          desc: 'Item-specific designator byte 16 — literal'        },
     ];
 
+    // Essence element byte semantics — SMPTE ST 379-2:2010 §10.1 Table 3
+    // Byte 13 (0-indexed 12): Item Type Identifier
+    // Byte 14 (0-indexed 13): Essence Element Count — constant per track, often 7f in register
+    // Byte 15 (0-indexed 14): Essence Element Type — codec/format identifier, meaningful
+    // Byte 16 (0-indexed 15): Essence Element Number — unique per element within item, often 7f in register
+    const ESSENCE_ITEM_TYPES = {
+      '05': 'SDTI-CP Picture Item (SMPTE 326M)',
+      '06': 'SDTI-CP Sound Item (SMPTE 326M)',
+      '07': 'SDTI-CP Data Item (SMPTE 326M)',
+      '15': 'GC Picture Item',
+      '16': 'GC Sound Item',
+      '17': 'GC Data Item',
+      '18': 'GC Compound Item',
+    };
+    function essenceByteInfo(b, val, normUL) {
+      switch (b) {
+        // Bytes 5-8 (1-indexed): literal fixed identifiers for essence element keys
+        case 4: return { name: 'Essence Category',  desc: 'Essence element key identifier — fixed: 01' };
+        case 5: return { name: 'Essence Registry',  desc: 'Essence element key register — fixed: 02' };
+        case 6: return { name: 'Essence Structure', desc: 'Essence element key structure — fixed: 01' };
+        case 7: return { name: 'Essence Version',   desc: 'Essence element key version — fixed: 01' };
+        // Bytes 13-16 (1-indexed) per ST 379-2:2010 §10.1 Table 3
+        case 12: {
+          const t = ESSENCE_ITEM_TYPES[val];
+          return { name: 'Item Type Identifier', desc: t ? `This element belongs to the ${t} (0x${val})` : `unknown item type (0x${val}) — identifies the Content Package Item this element belongs to` };
+        }
+        case 13:
+          return {
+            name: 'Essence Element Count',
+            desc: val === '7f'
+              ? 'any (wildcard)'
+              : `${parseInt(val, 16)} element(s) of this type in the Content Package Item — constant for this track`,
+          };
+        case 14: {
+          if (val === '7f') return { name: 'Essence Element Type', desc: 'any (wildcard)' };
+          const k15wc = normUL ? normUL.substring(24, 26) + '7f' + val : null;
+          const k15   = normUL ? normUL.substring(24, 30) : null;
+          const n = k15wc && (ESSENCE_B15_NAMES[k15wc] || (k15 && ESSENCE_B15_NAMES[k15]));
+          return { name: 'Essence Element Type', desc: n || `codec/format identifier 0x${val} — defined in SMPTE 331M or GC mapping document` };
+        }
+        case 15:
+          return {
+            name: 'Essence Element Number',
+            desc: val === '7f'
+              ? 'any (wildcard)'
+              : `element number ${parseInt(val, 16)} within this Item — unique, set by encoder (ST 379-2:2010 §10.3)`,
+          };
+        default: return null;
+      }
+    }
+
+    // System Item Metadata Element Keys — SMPTE 379-1-2009 §6.2.1 Table 1
+    // Byte 5 = 02 (Sets and Packs), bytes 9-12 = 0d010301, byte 13 = 04 (CP) or 14 (GC).
+    const SYSTEM_ITEM_TYPES = {
+      '04': 'CP-Compatible System Item (SMPTE 326M)',
+      '14': 'GC-Compatible System Item',
+    };
+    const SYSTEM_SCHEME_NAMES = {
+      '01': 'CP System Scheme 1 (SMPTE 326M)',
+    };
+
+    function isSystemItemKey(normUL) {
+      return normUL.length === 32 &&
+        normUL.startsWith('060e2b34') &&
+        normUL.substring(8, 10) === '02' &&
+        normUL.substring(12, 14) === '01' &&
+        normUL.substring(16, 24) === '0d010301' &&
+        (normUL.substring(24, 26) === '04' || normUL.substring(24, 26) === '14');
+    }
+
+    function systemItemByteInfo(b, val) {
+      switch (b) {
+        case 4:  return { name: 'Registry Category',    desc: 'Sets and Packs (fixed: 02)' };
+        case 5:  return { name: 'Registry Designator',  desc: 'Per SMPTE 336M — variable; register entries use 7f to match any version' };
+        case 6:  return { name: 'Structure Designator', desc: 'Fixed-length Pack, Variable-length Pack or Local Set (fixed: 01)' };
+        case 7:  return { name: 'Version Number',       desc: 'Registry version at point of registration — variable' };
+        case 8:  return { name: 'Registry',             desc: 'Sets and Packs Registry — Class 13 Public Use (0d)' };
+        case 9:  return { name: 'Organization',         desc: 'AAF Association (01)' };
+        case 10: return { name: 'Application',          desc: 'AAF Association Application (03)' };
+        case 11: return { name: 'Structure Version',    desc: 'MXF Generic Container Keys structure version (01)' };
+        case 12: {
+          const t = SYSTEM_ITEM_TYPES[val];
+          return { name: 'Item Type', desc: t || `unknown item type (0x${val})` };
+        }
+        case 13: {
+          const s = SYSTEM_SCHEME_NAMES[val];
+          return { name: 'System Scheme Identifier', desc: s || `scheme 0x${val} — see associated SMPTE document` };
+        }
+        case 14: return {
+          name: 'Metadata/Control Element Identifier',
+          desc: val === '01'
+            ? 'First metadata element — marks start of content package (SMPTE 379-1-2009 §6.2.1)'
+            : `element identifier 0x${val}`,
+        };
+        case 15: return { name: 'Reserved', desc: 'Reserved for use by Metadata Element' };
+        default: return null;
+      }
+    }
+
     function renderUL(ul, normQuery) {
       const prefix = 'urn:smpte:ul:';
       if (!ul.startsWith(prefix)) return escHtml(ul);
@@ -448,6 +567,10 @@
       if (groups.length !== 4 || groups.some(g => g.length !== 8)) return escHtml(ul);
 
       const normUL = groups.join(''); // 32 hex chars, no separators
+      // Essence element keys (ST 2088): byte 5 = 01. In these ULs, 7f is a wildcard in
+      // every byte position after the fixed 4-byte SMPTE prefix, not just bytes 5-8.
+      const isEssenceEl  = normUL.startsWith('060e2b34') && normUL.substring(8, 10) === '01';
+      const isSystemItem = isSystemItemKey(normUL);
 
       // Find which byte indices the normQuery matches (for bold highlight).
       // For SMPTE prefix queries (starting 060e2b34) mark all bytes the query covers,
@@ -479,25 +602,37 @@
         const byteHex = normUL.substring(b * 2, b * 2 + 2);
         const info    = UL_BYTE_INFO[b];
 
-        // Dynamic tooltip: enrich bytes 8-9 with org registry info
+        // Tooltip: essence elements override bytes 5-8 and 13-16; bytes 9-10 get org enrichment.
+        let name = info.name;
         let desc = info.desc;
-        if (b === 8) {
+        const eb = isEssenceEl  ? essenceByteInfo(b, byteHex, normUL)
+                 : isSystemItem ? systemItemByteInfo(b, byteHex)
+                 : null;
+        if (eb) {
+          name = eb.name; desc = eb.desc;
+        } else if (b === 8) {
           if      (byteHex === '0d') desc = 'Class 13 — Public Use registrations';
           else if (byteHex === '0e') desc = 'Class 14 — Private Use registrations';
         } else if (b === 9 && org) {
           desc = `${org.name} (Class ${org.cls})`;
         }
-        const tooltip = `Byte ${b + 1}: ${info.name} — ${desc}`;
+        // For essence elements, 7f is a wildcard only in bytes 9-16 (not 5-8 which are fixed literals)
+        const isAnyEssenceWc = isEssenceEl && b >= 8 && !info.wildcard && byteHex === '7f';
+        if (isAnyEssenceWc && b < 12) desc = 'wildcard — any value (ST 2088 essence element)';
+        const tooltip = `Byte ${b + 1}: ${name} — ${desc}`;
 
-        const isActiveWildcard = info.wildcard && byteHex === '7f';
+        // Bytes 5-8 are the standard wildcard zone for non-essence ULs only
+        const isActiveWildcard = (!isEssenceEl && info.wildcard && byteHex === '7f') || isAnyEssenceWc;
         const isMatched = highlightedBytes.has(b);
         const isDimmed  = highlightedBytes.size > 0 && !isMatched && !isActiveWildcard;
 
         let cls;
         if (info.fixed) {
           cls = 'ul-fixed';
-        } else if (info.wildcard) {
+        } else if (info.wildcard && !isEssenceEl) {
           cls = isActiveWildcard ? 'ul-wc-active' : 'ul-wc-range';
+        } else if (isAnyEssenceWc) {
+          cls = 'ul-wc-active';
         } else {
           cls = 'ul-item';
         }
@@ -532,18 +667,41 @@
 
       let ulSection = '';
       if (normUL) {
+        const isEssenceEl  = normUL.startsWith('060e2b34') && normUL.substring(8, 10) === '01';
+        const isSystemItem = isSystemItemKey(normUL);
         const rows = UL_BYTE_INFO.map((info, b) => {
           const val = normUL.substring(b * 2, b * 2 + 2);
-          const isActiveWildcard = info.wildcard && val === '7f';
+          const eb  = isEssenceEl  ? essenceByteInfo(b, val, normUL)
+                    : isSystemItem ? systemItemByteInfo(b, val)
+                    : null;
+          const rowName = eb ? eb.name : info.name;
+          const rowDesc = eb ? eb.desc : info.desc;
+          // Wildcard only in bytes 9-16 (b >= 8) for essence elements; bytes 5-8 are fixed literals
+          const isAnyEssenceWc = isEssenceEl && b >= 8 && !info.wildcard && val === '7f';
+          const isActiveWildcard = (!isEssenceEl && info.wildcard && val === '7f') || isAnyEssenceWc;
           const rowCls = info.fixed ? 'byte-fixed'
-                       : info.wildcard ? (isActiveWildcard ? 'byte-wc-active' : 'byte-wc')
+                       : (info.wildcard && !isEssenceEl) ? (isActiveWildcard ? 'byte-wc-active' : 'byte-wc')
+                       : isAnyEssenceWc ? 'byte-wc-active'
                        : 'byte-item';
-          const note = isActiveWildcard ? ' <em>— wildcard, matches any value</em>' : '';
+          const note = (!eb && isAnyEssenceWc)
+            ? ' <em>— wildcard, any value (ST 2088 essence element)</em>'
+            : (!eb && !isEssenceEl && isActiveWildcard) ? ' <em>— wildcard, matches any value</em>' : '';
+          // When the register entry has 7f here but the query had a specific byte, show what it means.
+          let queryHint = '';
+          if (isAnyEssenceWc && normQuery && normQuery.length === 32) {
+            const qval = normQuery.substring(b * 2, b * 2 + 2);
+            if (qval !== '7f') {
+              const qeb = essenceByteInfo(b, qval, normQuery);
+              if (qeb && qeb.desc && !qeb.desc.startsWith('any')) {
+                queryHint = ` <em style="color:#92400e">(your query: 0x${qval} — ${escHtml(qeb.desc)})</em>`;
+              }
+            }
+          }
           return `<tr class="${rowCls}">
               <td class="mono">${b + 1}</td>
               <td class="mono">${escHtml(val)}</td>
-              <td>${escHtml(info.name)}</td>
-              <td>${escHtml(info.desc)}${note}</td>
+              <td>${escHtml(rowName)}</td>
+              <td>${escHtml(rowDesc)}${note}${queryHint}</td>
             </tr>`;
         }).join('');
         ulSection = `<div class="details-section">
@@ -643,7 +801,7 @@
       return hints;
     }
 
-    function renderCard(e, rawQuery, normQuery, queryLower, directULMatch, wildcardMatch) {
+    function renderCard(e, rawQuery, normQuery, queryLower, directULMatch, wildcardMatch, essenceWildcardMatch) {
       const dep = e.isDeprecated ? ' deprecated' : '';
       const isPrefixMatch = (directULMatch || wildcardMatch) && normQuery.length > 0 && normQuery.length < 32;
       const hints = getMatchHints(e, queryLower, normQuery, directULMatch, wildcardMatch);
@@ -661,6 +819,7 @@
     ${e.isDeprecated ? '<span class="badge b-dep">Deprecated</span>' : ''}
     ${directULMatch ? `<span class="badge b-ul-direct" title="The query bytes match this UL exactly (literal substring match).">UL direct</span>` : ''}
     ${wildcardMatch ? `<span class="badge b-ul-wc" title="The query bytes match this UL only after treating bytes 5–8 (registry designators) as wildcards — a 7f in either the query or the entry at those positions is accepted as a match for any value.">UL wildcard</span>` : ''}
+    ${essenceWildcardMatch ? `<span class="badge b-ul-ewc" title="Matched via ST 379-2:2010 essence element key — byte 13 (Item Type) and byte 15 (Essence Element Type) must agree; byte 14 (Essence Element Count) and byte 16 (Essence Element Number) are per-track values and always masked.">Essence wildcard</span>` : ''}
     ${isPrefixMatch ? `<span class="badge b-ul-prefix" title="Your query is ${normQuery.length / 2} of 16 bytes — this entry matched on the leading bytes only. Remaining bytes (shown greyed in the UL above) were not part of the query. Add more bytes to narrow to a unique entry.">UL prefix</span>` : ''}
     ${e.symbol ? `<span class="card-symbol">${hl(e.symbol, rawQuery)}</span>` : ''}
     ${e.defDoc  ? `<span class="card-doc">${hl(e.defDoc, rawQuery)}</span>` : ''}
@@ -694,26 +853,72 @@
         </tbody></table>
       </div>` : '';
 
-      // Essence element resolution (SMPTE ST 2088 / ST 379)
+      // System Item Metadata Element Key resolution — SMPTE 379-1-2009 §6.2.1
+      // Byte 5 (0-indexed 4) = 02, bytes 9-12 = 0d010301, byte 13 = 04 (CP) or 14 (GC).
+      // Bytes 6 and 8 (Registry Designator / Version Number) are variable per SMPTE 336M;
+      // the SMPTE register does not carry these keys verbatim (bytes 9-16 not registered).
+      let systemItemSection = '';
+      if (isSystemItemKey(normUL)) {
+        const itemTypeByte = normUL.substring(24, 26);
+        const schemeByte   = normUL.substring(26, 28);
+        const elemByte     = normUL.substring(28, 30);
+        const resvByte     = normUL.substring(30, 32);
+        const itemTypeName = SYSTEM_ITEM_TYPES[itemTypeByte] || `unknown (0x${itemTypeByte})`;
+        const schemeName   = SYSTEM_SCHEME_NAMES[schemeByte]  || `unknown scheme (0x${schemeByte}) — see associated SMPTE document`;
+        const elemDesc     = elemByte === '01'
+          ? 'First metadata element — marks start of content package (SMPTE 379-1-2009 §6.2.1)'
+          : `element identifier 0x${elemByte}`;
+        systemItemSection = `<div class="details-section">
+          <h4>System Item Metadata Element Key — SMPTE 379-1-2009</h4>
+          <p style="margin:0 0 0.5rem;font-size:0.78rem">Defined in SMPTE 379-1-2009 §6.2.1 Table 1. Bytes 6 and 8 (Registry Designator / Version Number) are variable per SMPTE 336M — register entries use 7f as a wildcard in those positions, so these keys are not present verbatim in the public register XML.</p>
+          <table class="details-table"><tbody>
+            <tr><th>Item Type (byte 13)</th><td class="mono">${escHtml(itemTypeByte)}</td><td>${escHtml(itemTypeName)}</td></tr>
+            <tr><th>System Scheme (byte 14)</th><td class="mono">${escHtml(schemeByte)}</td><td>${escHtml(schemeName)}</td></tr>
+            <tr><th>Element Identifier (byte 15)</th><td class="mono">${escHtml(elemByte)}</td><td>${escHtml(elemDesc)}</td></tr>
+            <tr><th>Reserved (byte 16)</th><td class="mono">${escHtml(resvByte)}</td><td>Reserved for use by Metadata Element</td></tr>
+          </tbody></table>
+        </div>`;
+      }
+
+      // Essence Element Key resolution — SMPTE ST 379-2:2010 §10.1 Table 3
       // Byte 5 (0-indexed 4) = 01 identifies essence element keys.
-      // Bytes 13–14 (0-indexed 12–13) = item_type / element_type — the meaningful descriptor.
-      // Bytes 15–16 (0-indexed 14–15) = count / item_length — per-track, vary across instances.
+      // Byte 13 (0-indexed 12) = Item Type Identifier (05/06/07/15-18)
+      // Byte 14 (0-indexed 13) = Essence Element Count — constant per track, often 7f in register
+      // Byte 15 (0-indexed 14) = Essence Element Type — codec/format identifier, meaningful
+      // Byte 16 (0-indexed 15) = Essence Element Number — unique per element, often 7f in register
       let essenceSection = '';
       if (normUL.startsWith('060e2b34') && normUL.substring(8, 10) === '01') {
         // Look up the item-type NODE: bytes 1–13 match, bytes 14–16 are zeroed in NODE entries.
         const itemTypeKey = normUL.substring(0, 26) + '000000';
         const itemTypeEntry = allEntries.find(e => e.register === 'Essence' && e.normUL === itemTypeKey);
 
-        // Find LEAF entries that match with 7f-wildcard in all item-designator bytes.
+        // Find LEAF entries that match with 7f-wildcard in item-designator bytes.
         const leafMatches = allEntries.filter(e =>
           e.register === 'Essence' && e.kind === 'LEAF' &&
           ulMatchesEssenceWildcard(normUL, e.normUL)
         );
 
-        const itemTypeName = itemTypeEntry ? itemTypeEntry.name : `unknown (0x${normUL.substring(24, 26)})`;
-        const elTypeByte  = normUL.substring(26, 28);
-        const countByte   = normUL.substring(28, 30);
-        const lenByte     = normUL.substring(30, 32);
+        const itemTypeName   = itemTypeEntry ? itemTypeEntry.name : `unknown (0x${normUL.substring(24, 26)})`;
+        const elemCountByte  = normUL.substring(26, 28);  // byte 14: Essence Element Count
+        const elemTypeByte   = normUL.substring(28, 30);  // byte 15: Essence Element Type
+        const elemNumByte    = normUL.substring(30, 32);  // byte 16: Essence Element Number
+
+        // Codec/format name: look up by (item_type, wildcard_count, elem_type) — byte 14 is count, not type.
+        const elemTypeKey    = normUL.substring(24, 26) + '7f' + elemTypeByte;
+        const elemTypeName   = ESSENCE_B15_NAMES[elemTypeKey] ||
+                               ESSENCE_B15_NAMES[normUL.substring(24, 30)] ||
+                               `codec/format identifier 0x${elemTypeByte} — defined in SMPTE 331M or GC mapping document`;
+
+        const elemCountDesc  = elemCountByte === '7f'
+          ? 'any (wildcard)'
+          : `${parseInt(elemCountByte, 16)} element(s) of this type in the Content Package Item — constant for this track`;
+        const elemNumDesc    = elemNumByte === '7f'
+          ? 'any (wildcard)'
+          : `element number ${parseInt(elemNumByte, 16)} within this Item — unique, set by encoder`;
+
+        // MXF Track Number: bytes 13–16 as UInt32 A.B.C.D (ST 379-2:2010 §10.3)
+        const trackNum = [normUL.substring(24,26), normUL.substring(26,28), normUL.substring(28,30), normUL.substring(30,32)]
+          .map(h => parseInt(h, 16)).join('.');
 
         const leafRows = leafMatches.map(e => `<tr>
           <td>${escHtml(e.name)}</td>
@@ -727,34 +932,46 @@
               <thead><tr><th>Name</th><th>Registered bytes 13–16</th><th>Symbol</th><th>Document</th></tr></thead>
               <tbody>${leafRows}</tbody>
             </table>`
-          : `<p style="margin:0.4rem 0 0;color:#666">No entries found in the Essence register for item/element type <code>${normUL.substring(24, 28)}</code>.</p>`;
+          : `<p style="margin:0.4rem 0 0;color:#666">No entries found in the Essence register for element type <code>${normUL.substring(24, 26)}xx${elemTypeByte}xx</code>.</p>`;
 
         essenceSection = `<div class="details-section">
-          <h4>Essence Element Key (SMPTE ST 2088 / ST 379)</h4>
-          <p style="margin:0 0 0.5rem">Bytes 13–14 identify the element type; bytes 15–16 carry per-track count and item-length that vary between instances.</p>
+          <h4>Essence Element Key — SMPTE ST 379-2:2010</h4>
+          <p style="margin:0 0 0.5rem;font-size:0.78rem">Defined in SMPTE ST 379-2:2010 §10.1 Table 3. Byte 13 identifies the Content Package Item this element belongs to; byte 14 is the element count (constant per track); byte 15 is the element type (codec/format identifier); byte 16 is the element number (unique within item). Bytes 13–16 together form the MXF track number linking to Header Metadata (§10.3).</p>
           <table class="details-table"><tbody>
-            <tr><th>Item Type (byte 13)</th><td class="mono">${escHtml(normUL.substring(24, 26))}</td><td>${escHtml(itemTypeName)}</td></tr>
-            <tr><th>Element Type (byte 14)</th><td class="mono">${escHtml(elTypeByte)}</td><td>codec/format-specific sub-type</td></tr>
-            <tr><th>Count (byte 15)</th><td class="mono">${escHtml(countByte)}</td><td>per-track element count (instance-specific)</td></tr>
-            <tr><th>Item Length (byte 16)</th><td class="mono">${escHtml(lenByte)}</td><td>per-track item length (instance-specific)</td></tr>
+            <tr><th>Item Type Identifier (byte 13)</th><td class="mono">${escHtml(normUL.substring(24, 26))}</td><td>This element belongs to the ${escHtml(itemTypeName)}</td></tr>
+            <tr><th>Essence Element Count (byte 14)</th><td class="mono">${escHtml(elemCountByte)}</td><td>${escHtml(elemCountDesc)}</td></tr>
+            <tr><th>Essence Element Type (byte 15)</th><td class="mono">${escHtml(elemTypeByte)}</td><td>${escHtml(elemTypeName)}</td></tr>
+            <tr><th>Essence Element Number (byte 16)</th><td class="mono">${escHtml(elemNumByte)}</td><td>${escHtml(elemNumDesc)}</td></tr>
+            <tr><th>MXF Track Number (A.B.C.D)</th><td class="mono">${escHtml(trackNum)}</td><td>UInt32 big-endian — links this Essence Element to its Header Metadata track (ST 379-2:2010 §10.3)</td></tr>
           </tbody></table>
-          <h4 style="margin-top:0.8rem">Matching Register Entries (bytes 15–16 as wildcards)</h4>
+          <h4 style="margin-top:0.8rem">Matching Register Entries (Essence Element Count and Number as wildcards)</h4>
           ${matchTable}
         </div>`;
       }
 
+      const isEssenceElement = essenceSection !== '';
+      const isSystemItemUL   = systemItemSection !== '';
       const rows = UL_BYTE_INFO.map((info, b) => {
         const val = normUL.substring(b * 2, b * 2 + 2);
-        const isActiveWildcard = info.wildcard && val === '7f';
+        const eb  = isEssenceElement ? essenceByteInfo(b, val, normUL)
+                  : isSystemItemUL   ? systemItemByteInfo(b, val)
+                  : null;
+        const rowName = eb ? eb.name : info.name;
+        const rowDesc = eb ? eb.desc : info.desc;
+        const isAnyEssenceWc = isEssenceElement && b >= 8 && !info.wildcard && val === '7f';
+        const isActiveWildcard = (!isEssenceElement && info.wildcard && val === '7f') || isAnyEssenceWc;
         const rowCls = info.fixed ? 'byte-fixed'
-                     : info.wildcard ? (isActiveWildcard ? 'byte-wc-active' : 'byte-wc')
+                     : (info.wildcard && !isEssenceElement) ? (isActiveWildcard ? 'byte-wc-active' : 'byte-wc')
+                     : isAnyEssenceWc ? 'byte-wc-active'
                      : 'byte-item';
-        const note = isActiveWildcard ? ' <em>— wildcard, matches any value</em>' : '';
+        const note = (!eb && isAnyEssenceWc)
+          ? ' <em>— wildcard, any value (ST 2088 essence element)</em>'
+          : (!eb && !isEssenceElement && isActiveWildcard) ? ' <em>— wildcard, matches any value</em>' : '';
         return `<tr class="${rowCls}">
             <td class="mono">${b + 1}</td>
             <td class="mono">${escHtml(val)}</td>
-            <td>${escHtml(info.name)}</td>
-            <td>${escHtml(info.desc)}${note}</td>
+            <td>${escHtml(rowName)}</td>
+            <td>${escHtml(rowDesc)}${note}</td>
           </tr>`;
       }).join('');
       const ulSection = `<div class="details-section">
@@ -764,22 +981,24 @@
           <tbody>${rows}</tbody>
         </table>
       </div>`;
-
-      const isEssenceElement = essenceSection !== '';
       const orgNote = org
         ? ` It belongs to the Class ${org.cls} (${org.cls === 13 ? 'Public Use' : 'Private Use'}) space registered to <strong>${escHtml(org.name)}</strong>.`
         : '';
       const desc = privateEntry
         ? `This UL is a known Class ${org?.cls} private definition: <strong>${escHtml(privateEntry.name)}</strong>.`
-        : isEssenceElement
-          ? `This UL is an MXF essence element key not present verbatim in the register. The element type is resolved below using bytes 13–14; bytes 15–16 are per-track and differ between instances.`
-          : `This UL is not present in the SMPTE public register XML files.${orgNote}`;
+        : isSystemItemUL
+          ? `This UL is a System Item Metadata Element key defined in SMPTE 379-1-2009 §6.2.1. It is not present verbatim in the SMPTE public register XML because bytes 6 and 8 (Registry Designator / Version Number) vary by document version. The structure is decoded below.`
+          : isEssenceElement
+            ? `This UL is an MXF essence element key not present verbatim in the register. The element type is resolved below using bytes 13–14; bytes 15–16 are per-track and differ between instances.`
+            : `This UL is not present in the SMPTE public register XML files.${orgNote}`;
 
       const cardTitle = privateEntry
         ? escHtml(privateEntry.name)
-        : isEssenceElement
-          ? 'Essence Element Key (unregistered track number)'
-          : `Unregistered UL${org ? ` — ${escHtml(org.name)}` : ''}`;
+        : isSystemItemUL
+          ? 'System Item Metadata Element Key (SMPTE 379-1-2009)'
+          : isEssenceElement
+            ? 'Essence Element Key (unregistered track number)'
+            : `Unregistered UL${org ? ` — ${escHtml(org.name)}` : ''}`;
 
       return `<div class="result-card unregistered">
   <div class="card-top">
@@ -787,13 +1006,13 @@
     <span class="card-ul">${renderUL(ulStr, '')}</span>
   </div>
   <div class="card-meta">
-    ${privateEntry ? `<span class="badge" style="background:#d1fae5;color:#047857">Private Definition Found</span>` : isEssenceElement ? `<span class="badge b-reg">Essence Element</span>` : `<span class="badge b-dep">Not in public registers</span>`}
+    ${privateEntry ? `<span class="badge" style="background:#d1fae5;color:#047857">Private Definition Found</span>` : isSystemItemUL ? `<span class="badge b-reg">System Item (SMPTE 379-1-2009)</span>` : isEssenceElement ? `<span class="badge b-reg">Essence Element</span>` : `<span class="badge b-dep">Not in public registers</span>`}
     ${org ? `<span class="badge b-reg">Class ${org.cls} — ${escHtml(org.name)}</span>` : ''}
   </div>
   <div class="card-def">${desc}</div>
   <details class="entry-details">
     <summary>Details</summary>
-    <div class="details-content">${essenceSection}${privateSection}${orgSection}${ulSection}</div>
+    <div class="details-content">${systemItemSection}${essenceSection}${privateSection}${orgSection}${ulSection}</div>
   </details>
 </div>`;
     }
@@ -825,21 +1044,22 @@
 
         let directULMatch = false;
         let wildcardMatch = false;
+        let essenceWildcardMatch = false;
         if (normQuery) {
           directULMatch = e.normUL.includes(normQuery);
           if (!directULMatch && doWildcard) {
             const matchFn = normQuery.length < 32 ? ulPrefixMatchWithWildcard : ulMatchesWithWildcard;
             wildcardMatch = matchFn(normQuery, e.normUL);
-            // For full essence element keys, also wildcard 7f in item-designator bytes (ST 2088)
+            // For full essence element keys, 7f in item-designator bytes is also a wildcard (ST 2088)
             if (!wildcardMatch && normQuery.length === 32 && normQuery.substring(8, 10) === '01' &&
                 e.register === 'Essence') {
-              wildcardMatch = ulMatchesEssenceWildcard(normQuery, e.normUL);
+              essenceWildcardMatch = ulMatchesEssenceWildcard(normQuery, e.normUL);
             }
           }
         }
         const orgMatch = e.org && e.org.name.toLowerCase().includes(queryLower);
-        if (directULMatch || wildcardMatch || orgMatch || e.fullLower.includes(queryLower)) {
-          matches.push({ e, directULMatch, wildcardMatch });
+        if (directULMatch || wildcardMatch || essenceWildcardMatch || orgMatch || e.fullLower.includes(queryLower)) {
+          matches.push({ e, directULMatch, wildcardMatch, essenceWildcardMatch });
         }
       }
 
@@ -850,8 +1070,8 @@
         ? renderUnregisteredUL(normQuery) : '';
 
       const slice = matches.slice(0, MAX_DISPLAY);
-      resultsEl.innerHTML = unregisteredCard + slice.map(({ e, directULMatch, wildcardMatch }) =>
-        renderCard(e, raw, normQuery, queryLower, directULMatch, wildcardMatch)
+      resultsEl.innerHTML = unregisteredCard + slice.map(({ e, directULMatch, wildcardMatch, essenceWildcardMatch }) =>
+        renderCard(e, raw, normQuery, queryLower, directULMatch, wildcardMatch, essenceWildcardMatch)
       ).join('\n');
 
       moreEl.style.display = matches.length > MAX_DISPLAY ? '' : 'none';
