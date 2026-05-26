@@ -7,6 +7,8 @@
   <script src="orgs.js"></script>
   <script src="private.js"></script>
   <script src="data.js"></script>
+  <script src="systemItems.js"></script>
+  <script src="ul-match.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; }
     body {
@@ -142,6 +144,7 @@
     .b-ul-wc      { background: #fef3c7; color: #92400e; }
     .b-ul-ewc     { background: #ffedd5; color: #9a3412; }
     .b-ul-prefix  { background: #e0e7ff; color: #3730a3; }
+    .b-src-app    { background: #faf5ff; color: #6b21a8; border: 1px solid #d8b4fe; }
 
     mark { background: #fde68a; border-radius: 2px; padding: 0 1px; font-style: normal; }
 
@@ -264,11 +267,12 @@
 
   <div id="filters">
     <strong>Registers:</strong>
-    <label><input type="checkbox" value="Labels"   checked> Labels</label>
-    <label><input type="checkbox" value="Types"    checked> Types</label>
-    <label><input type="checkbox" value="Elements" checked> Elements</label>
-    <label><input type="checkbox" value="Groups"   checked> Groups</label>
-    <label><input type="checkbox" value="Essence"  checked> Essence</label>
+    <label><input type="checkbox" value="Labels"       checked> Labels</label>
+    <label><input type="checkbox" value="Types"        checked> Types</label>
+    <label><input type="checkbox" value="Elements"     checked> Elements</label>
+    <label><input type="checkbox" value="Groups"       checked> Groups</label>
+    <label><input type="checkbox" value="Essence"      checked> Essence</label>
+    <label><input type="checkbox" value="System Items" checked> System Items</label>
     <label id="hide-dep-wrap"><input type="checkbox" id="hide-deprecated"> Hide deprecated</label>
   </div>
 
@@ -279,73 +283,10 @@
   <script>
     'use strict';
 
-    // --- UL normalization ---
-    function normalizeHex(s) {
-      return s
-        .replace(/^urn:smpte:ul:/i, '')
-        .replace(/\\x/gi, '')
-        .replace(/0x/gi, '')
-        .replace(/[^0-9a-f]/gi, '')
-        .toLowerCase();
-    }
-
-    function looksLikeHex(s) {
-      const stripped = normalizeHex(s);
-      return stripped.length >= 2 && /^[0-9a-f]+$/.test(stripped);
-    }
+    const { normalizeHex, looksLikeHex, ulMatchesWithWildcard, ulPrefixMatchWithWildcard, ulMatchesEssenceWildcard } = window.UL_MATCH;
 
     function escRegex(s) {
       return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    }
-
-    // Per SMPTE ST 336: bytes 5-8 (1-indexed) = bytes 4-7 (0-indexed) are Registry Designators.
-    // 7f in those positions is a version wildcard matching any byte.
-    // Bytes 9-16 (1-indexed) = bytes 8-15 (0-indexed) are Item Designators where 7f is literal.
-    // The check is symmetric: 7f on either side triggers wildcard treatment, so one call suffices.
-    function ulMatchesWithWildcard(searchUL, entryUL) {
-      if (searchUL.length !== entryUL.length) return false;
-      for (let i = 0; i < searchUL.length; i += 2) {
-        const bytePos = i / 2;
-        const a = searchUL.substring(i, i + 2);
-        const b = entryUL.substring(i, i + 2);
-        if (bytePos >= 4 && bytePos <= 7 && (a === '7f' || b === '7f')) continue;
-        if (a !== b) return false;
-      }
-      return true;
-    }
-
-    // Prefix variant: searchHex may be shorter than a full 32-char UL.
-    // Triggered when the query starts with 060e2b34 and extends into the wildcard zone (bytes 4-7).
-    function ulPrefixMatchWithWildcard(searchHex, entryUL) {
-      const len = searchHex.length - (searchHex.length % 2);
-      for (let i = 0; i < len; i += 2) {
-        const bytePos = i / 2;
-        const a = searchHex.substring(i, i + 2);
-        const b = entryUL.substring(i, i + 2);
-        if (bytePos >= 4 && bytePos <= 7 && (a === '7f' || b === '7f')) continue;
-        if (a !== b) return false;
-      }
-      return true;
-    }
-
-    // Essence element wildcard (SMPTE ST 2088): 7f in any byte position after the fixed
-    // 4-byte SMPTE prefix is a wildcard. Applies only when matching against Essence register
-    // entries, since other registers treat 7f as a literal value in item-designator bytes.
-    function ulMatchesEssenceWildcard(searchUL, entryUL) {
-      if (searchUL.length !== 32 || entryUL.length !== 32) return false;
-      for (let i = 0; i < 32; i += 2) {
-        const a = searchUL.substring(i, i + 2);
-        const b = entryUL.substring(i, i + 2);
-        // Bytes 1-8 (i < 16) are literal — bytes 1-4 fixed SMPTE prefix,
-        // bytes 5-8 are the fixed 01020101 essence element identifier.
-        if (i < 16) { if (a !== b) return false; continue; }
-        // Byte 14 (i=26, Essence Element Count) and byte 16 (i=30, Essence Element Number)
-        // are per-track values that vary between files — always masked per ST 379-2:2010 §10.1.
-        if (i === 26 || i === 30) continue;
-        if (a === '7f' || b === '7f') continue;
-        if (a !== b) return false;
-      }
-      return true;
     }
 
     const ORG_REGISTRY = window.ORG_REGISTRY;
@@ -366,32 +307,71 @@
       throw new Error('SMPTE_ENTRIES not defined');
     }
 
-    const allEntries = window.SMPTE_ENTRIES.map(e => {
-      const normUL = normalizeHex(e.ul || '');
-      return {
-        register:      e.register,
-        symbol:        e.symbol        || '',
-        ul:            e.ul            || '',
-        kind:          e.kind          || '',
-        name:          e.name          || '',
-        definition:    e.definition    || '',
-        defDoc:        e.defDoc        || '',
-        namespaceName: e.namespaceName || '',
-        isConcrete:    e.isConcrete    || '',
-        klvSyntax:     e.klvSyntax     || '',
-        isDeprecated:  !!e.deprecated,
-        records:       e.records       || [],
-        localTags:     e.localTags     || [],
-        reverseRefs:   e.reverseRefs   || [],
-        normUL,
-        org:           orgForNormUL(normUL),   // null or {name, cls}
-        fullLower:     (e.text || '').toLowerCase(),
-        nameLower:     (e.name       || '').toLowerCase(),
-        symbolLower:   (e.symbol     || '').toLowerCase(),
-        ulLower:       (e.ul         || '').toLowerCase(),
-        defLower:      (e.definition || '').toLowerCase(),
-      };
-    });
+    if (typeof window.SMPTE_SYSTEM_ITEMS === 'undefined') {
+      console.warn('systemItems.js not loaded; System Items will not be available');
+      window.SMPTE_SYSTEM_ITEMS = [];
+    } else {
+      console.log('✓ System Items loaded:', window.SMPTE_SYSTEM_ITEMS.length, 'entries');
+    }
+
+    const allEntries = [
+      // Standard SMPTE register entries
+      ...window.SMPTE_ENTRIES.map(e => {
+        const normUL = normalizeHex(e.ul || '');
+        return {
+          register:      e.register,
+          symbol:        e.symbol        || '',
+          ul:            e.ul            || '',
+          kind:          e.kind          || '',
+          name:          e.name          || '',
+          definition:    e.definition    || '',
+          defDoc:        e.defDoc        || '',
+          namespaceName: e.namespaceName || '',
+          isConcrete:    e.isConcrete    || '',
+          klvSyntax:     e.klvSyntax     || '',
+          isDeprecated:  !!e.deprecated,
+          records:       e.records       || [],
+          localTags:     e.localTags     || [],
+          reverseRefs:   e.reverseRefs   || [],
+          normUL,
+          org:           orgForNormUL(normUL),   // null or {name, cls}
+          fullLower:     (e.text || '').toLowerCase(),
+          nameLower:     (e.name       || '').toLowerCase(),
+          symbolLower:   (e.symbol     || '').toLowerCase(),
+          ulLower:       (e.ul         || '').toLowerCase(),
+          defLower:      (e.definition || '').toLowerCase(),
+        };
+      }),
+      // System Item entries (SMPTE 326M/385M)
+      ...(window.SMPTE_SYSTEM_ITEMS || []).map(e => {
+        const normUL = e.ul.replace(/\./g, '').toLowerCase();
+        const urnUL = `urn:smpte:ul:${e.ul.slice(0, 8)}.${e.ul.slice(9, 17)}.${e.ul.slice(18, 26)}.${e.ul.slice(27)}`;
+        return {
+          register:      e.register,
+          symbol:        e.symbol        || '',
+          ul:            urnUL,
+          kind:          'SystemItem',
+          name:          e.name          || '',
+          definition:    e.description   || '',
+          defDoc:        e.standard      || '',
+          namespaceName: '',
+          isConcrete:    true,
+          klvSyntax:     '',
+          isDeprecated:  false,
+          records:       [],
+          localTags:     [],
+          reverseRefs:   [],
+          byteDescriptions: e.byteDescriptions || {},
+          normUL,
+          org:           orgForNormUL(normUL),
+          fullLower:     (e.description || '').toLowerCase(),
+          nameLower:     (e.name       || '').toLowerCase(),
+          symbolLower:   (e.symbol     || '').toLowerCase(),
+          ulLower:       urnUL.toLowerCase(),
+          defLower:      (e.description || '').toLowerCase(),
+        };
+      }),
+    ];
 
     const registers = [...new Set(allEntries.map(e => e.register))];
     const IDLE_STATUS = `${allEntries.length.toLocaleString()} entries across ${registers.length} registers. Type to search.`;
@@ -447,10 +427,10 @@
       { name: 'Label Size',         desc: 'Remaining label length (fixed: 0e = 14 bytes)',    fixed: true  },
       { name: 'ISO Prefix',         desc: 'ISO/IEC designation (fixed: 2b)',                  fixed: true  },
       { name: 'SMPTE Designation',  desc: 'SMPTE organization code (fixed: 34)',              fixed: true  },
-      { name: 'Category',           desc: 'Registry category designator (7f = any, wildcard)',wildcard: true },
-      { name: 'Registry',           desc: 'Registry/version designator (7f = any, wildcard)', wildcard: true },
-      { name: 'Structure',          desc: 'Registry structure designator (7f = any, wildcard)',wildcard: true },
-      { name: 'Version',            desc: 'Registry version number (7f = any, wildcard)',     wildcard: true },
+      { name: 'Category',           desc: 'Registry category designator — 01 = Essence Elements, 02 = Sets/Packs, 04 = Dictionary Items, 7f = any (wildcard)', wildcard: true },
+      { name: 'Registry',           desc: 'Registry designator — identifies register type (05, 43, 53 …); must match exactly, 7f = any (wildcard)', wildcard: true },
+      { name: 'Structure',          desc: 'Structure designator — must match exactly, 7f = any (wildcard)', wildcard: true },
+      { name: 'Version',            desc: 'Registry version number — always ignored during matching (version-variable)', wildcard: true },
       { name: 'Org Class',          desc: '0d = Class 13 Public Use, 0e = Class 14 Private Use, other = SMPTE standard' },
       { name: 'Org ID',             desc: 'Organization identifier — see SMPTE-RA Class 13/14 registrations' },
       { name: 'Item [11]',          desc: 'Item-specific designator byte 11 — literal'        },
@@ -531,7 +511,13 @@
         (normUL.substring(24, 26) === '04' || normUL.substring(24, 26) === '14');
     }
 
-    function systemItemByteInfo(b, val) {
+    function systemItemByteInfo(b, val, entry) {
+      // If entry has detailed byteDescriptions from SMPTE 326M/385M, use those
+      if (entry && entry.byteDescriptions && entry.byteDescriptions[b + 1]) {
+        const bd = entry.byteDescriptions[b + 1];
+        return { name: bd.name, desc: `${bd.value.toUpperCase()} — ${bd.meaning}` };
+      }
+      // Fall back to generic System Item descriptions
       switch (b) {
         case 4:  return { name: 'Registry Category',    desc: 'Sets and Packs (fixed: 02)' };
         case 5:  return { name: 'Registry Designator',  desc: 'Per SMPTE 336M — variable; register entries use 7f to match any version' };
@@ -560,7 +546,7 @@
       }
     }
 
-    function renderUL(ul, normQuery) {
+    function renderUL(ul, normQuery, entry) {
       const prefix = 'urn:smpte:ul:';
       if (!ul.startsWith(prefix)) return escHtml(ul);
       const groups = ul.slice(prefix.length).split('.');
@@ -606,7 +592,7 @@
         let name = info.name;
         let desc = info.desc;
         const eb = isEssenceEl  ? essenceByteInfo(b, byteHex, normUL)
-                 : isSystemItem ? systemItemByteInfo(b, byteHex)
+                 : isSystemItem ? systemItemByteInfo(b, byteHex, entry)
                  : null;
         if (eb) {
           name = eb.name; desc = eb.desc;
@@ -672,7 +658,7 @@
         const rows = UL_BYTE_INFO.map((info, b) => {
           const val = normUL.substring(b * 2, b * 2 + 2);
           const eb  = isEssenceEl  ? essenceByteInfo(b, val, normUL)
-                    : isSystemItem ? systemItemByteInfo(b, val)
+                    : isSystemItem ? systemItemByteInfo(b, val, e)
                     : null;
           const rowName = eb ? eb.name : info.name;
           const rowDesc = eb ? eb.desc : info.desc;
@@ -695,6 +681,21 @@
               if (qeb && qeb.desc && !qeb.desc.startsWith('any')) {
                 queryHint = ` <em style="color:#92400e">(your query: 0x${qval} — ${escHtml(qeb.desc)})</em>`;
               }
+            }
+          }
+          // System Item byte 16 (Metadata Block Count): ff in entry matches any count
+          if (!queryHint && isSystemItem && b === 15 && val === 'ff' && normQuery && normQuery.length === 32) {
+            const qval = normQuery.substring(30, 32);
+            if (qval !== 'ff') {
+              const blockCount = parseInt(qval, 16);
+              queryHint = ` <em style="color:#92400e">(your query: 0x${qval} — ${blockCount} metadata block${blockCount !== 1 ? 's' : ''})</em>`;
+            }
+          }
+          // Version byte: always ignored during matching — show if query differs from entry
+          if (!queryHint && !isEssenceEl && b === 7 && normQuery && normQuery.length >= 16) {
+            const qval = normQuery.substring(14, 16);
+            if (qval !== val) {
+              queryHint = ` <em style="color:#888">(your query had version 0x${qval} — version byte is always ignored during matching)</em>`;
             }
           }
           return `<tr class="${rowCls}">
@@ -740,7 +741,7 @@
           const resolvedName = allEntries.find(x => x.ul === r.ul)?.name || '';
           return `<tr>
               <td class="mono">${escHtml(r.localTag)}</td>
-              <td class="card-ul" style="font-size:0.68rem">${renderUL(r.ul, normQuery)}</td>
+              <td class="card-ul" style="font-size:0.68rem">${renderUL(r.ul, normQuery, e)}</td>
               <td>${escHtml(resolvedName)}</td>
               <td>${r.isOptional ? 'optional' : 'required'}</td>
             </tr>`;
@@ -811,14 +812,15 @@
       return `<div class="result-card${dep}">
   <div class="card-top">
     <span class="card-name">${hl(e.name, rawQuery)}</span>
-    <span class="card-ul">${renderUL(e.ul, normQuery)}</span>
+    <span class="card-ul">${renderUL(e.ul, normQuery, e)}</span>
   </div>
   <div class="card-meta">
     <span class="badge b-reg">${escHtml(e.register)}</span>
+    ${e.register === 'System Items' ? `<span class="badge b-src-app" title="Not in the SMPTE XML registers — this entry is defined by this application based on SMPTE prose standards (SMPTE 326M / SMPTE 385M). The official SMPTE online registers do not publish these system item keys.">App-defined</span>` : ''}
     ${e.kind ? `<span class="badge b-kind">${escHtml(e.kind)}</span>` : ''}
     ${e.isDeprecated ? '<span class="badge b-dep">Deprecated</span>' : ''}
     ${directULMatch ? `<span class="badge b-ul-direct" title="The query bytes match this UL exactly (literal substring match).">UL direct</span>` : ''}
-    ${wildcardMatch ? `<span class="badge b-ul-wc" title="The query bytes match this UL only after treating bytes 5–8 (registry designators) as wildcards — a 7f in either the query or the entry at those positions is accepted as a match for any value.">UL wildcard</span>` : ''}
+    ${wildcardMatch ? `<span class="badge b-ul-wc" title="Matched via wildcard/version-insensitive logic — byte 8 (Version Number) is always ignored; bytes 5–7 (Category/Registry/Structure) with value 7f match any value; for System Item keys, byte 16 (Metadata Block Count) with value ff matches any count.">UL wildcard</span>` : ''}
     ${essenceWildcardMatch ? `<span class="badge b-ul-ewc" title="Matched via ST 379-2:2010 essence element key — byte 13 (Item Type) and byte 15 (Essence Element Type) must agree; byte 14 (Essence Element Count) and byte 16 (Essence Element Number) are per-track values and always masked.">Essence wildcard</span>` : ''}
     ${isPrefixMatch ? `<span class="badge b-ul-prefix" title="Your query is ${normQuery.length / 2} of 16 bytes — this entry matched on the leading bytes only. Remaining bytes (shown greyed in the UL above) were not part of the query. Add more bytes to narrow to a unique entry.">UL prefix</span>` : ''}
     ${e.symbol ? `<span class="card-symbol">${hl(e.symbol, rawQuery)}</span>` : ''}
