@@ -27,13 +27,16 @@
   // via ulMatchesEssenceWildcard instead.
   // Bytes 9-15 (bytePos 8-14) are Item Designators — exact match.
   // Byte 16 (bytePos 15) for System Item ULs (SMPTE 326M/385M) uses FF as wildcard for metadata block count.
-  function ulMatchesWithWildcard(searchUL, entryUL) {
-    if (searchUL.length !== entryUL.length) return false;
-    const isEssenceEl = searchUL.substring(8, 10) === '01';
-    const isSystemItem = searchUL.startsWith('060e2b3402') && searchUL.substring(16, 24) === '0d010301' && searchUL.substring(24, 28) === '0401';
-    for (let i = 0; i < searchUL.length; i += 2) {
-      const bytePos = i / 2;
-      const a = searchUL.substring(i, i + 2);
+  function matchBytes(searchHex, entryUL, byteCount) {
+    const isEssenceEl = searchHex.substring(8, 10) === '01';
+    const isSystemItem =
+      searchHex.startsWith('060e2b3402') &&
+      searchHex.length >= 28 &&
+      searchHex.substring(16, 24) === '0d010301' &&
+      searchHex.substring(24, 28) === '0401';
+    for (let bytePos = 0; bytePos < byteCount; bytePos++) {
+      const i = bytePos * 2;
+      const a = searchHex.substring(i, i + 2);
       const b = entryUL.substring(i, i + 2);
       if (!isEssenceEl && bytePos === 7) continue;
       if (!isEssenceEl && (bytePos === 4 || bytePos === 5 || bytePos === 6) && (a === '7f' || b === '7f')) continue;
@@ -43,21 +46,14 @@
     return true;
   }
 
+  function ulMatchesWithWildcard(searchUL, entryUL) {
+    if (searchUL.length !== entryUL.length) return false;
+    return matchBytes(searchUL, entryUL, 16);
+  }
+
   // Prefix variant: searchHex may be shorter than a full 32-char UL.
   function ulPrefixMatchWithWildcard(searchHex, entryUL) {
-    const len = searchHex.length - (searchHex.length % 2);
-    const isEssenceEl = searchHex.substring(8, 10) === '01';
-    const isSystemItem = searchHex.startsWith('060e2b3402') && searchHex.length >= 28 && searchHex.substring(16, 24) === '0d010301' && searchHex.substring(24, 28) === '0401';
-    for (let i = 0; i < len; i += 2) {
-      const bytePos = i / 2;
-      const a = searchHex.substring(i, i + 2);
-      const b = entryUL.substring(i, i + 2);
-      if (!isEssenceEl && bytePos === 7) continue;
-      if (!isEssenceEl && (bytePos === 4 || bytePos === 5 || bytePos === 6) && (a === '7f' || b === '7f')) continue;
-      if (isSystemItem && bytePos === 15 && (a === 'ff' || b === 'ff')) continue;
-      if (a !== b) return false;
-    }
-    return true;
+    return matchBytes(searchHex, entryUL, Math.floor(searchHex.length / 2));
   }
 
   // Essence element wildcard (SMPTE ST 2088): 7f in any byte position after the fixed
@@ -80,9 +76,9 @@
     return true;
   }
 
-  exports.normalizeHex             = normalizeHex;
-  exports.looksLikeHex             = looksLikeHex;
-  exports.ulMatchesWithWildcard    = ulMatchesWithWildcard;
+  exports.normalizeHex              = normalizeHex;
+  exports.looksLikeHex              = looksLikeHex;
+  exports.ulMatchesWithWildcard     = ulMatchesWithWildcard;
   exports.ulPrefixMatchWithWildcard = ulPrefixMatchWithWildcard;
-  exports.ulMatchesEssenceWildcard = ulMatchesEssenceWildcard;
+  exports.ulMatchesEssenceWildcard  = ulMatchesEssenceWildcard;
 })(typeof module !== 'undefined' ? module.exports : (window.UL_MATCH = {}));
