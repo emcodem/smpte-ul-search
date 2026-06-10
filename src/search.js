@@ -44,8 +44,10 @@
 
   const filterCheckboxes = [...document.querySelectorAll('#filters input[type=checkbox][value]')];
   const hideDepCb = document.getElementById('hide-deprecated');
+  const localTagsOnlyCb = document.getElementById('local-tags-only');
   let enabledRegs = new Set(filterCheckboxes.filter(cb => cb.checked).map(cb => cb.value));
   let hideDep = hideDepCb.checked;
+  let localTagsOnly = localTagsOnlyCb.checked;
 
   function runSearch() {
     const raw = queryEl.value.trim();
@@ -58,8 +60,9 @@
       return;
     }
 
-    const queryLower = raw.toLowerCase();
-    const normQuery  = looksLikeHex(raw) ? normalizeHex(raw) : '';
+    const queryLower        = raw.toLowerCase();
+    const normQueryForTags  = normalizeHex(raw);
+    const normQuery         = looksLikeHex(raw) ? normQueryForTags : '';
     // Apply wildcard matching for any query that begins with the SMPTE OID prefix,
     // since bytes 5-8 (registry designators) may be 7f in stored entries.
     const doWildcard = normQuery.startsWith('060e2b34');
@@ -84,8 +87,13 @@
           }
         }
       }
-      const orgMatch = e.org && e.org.name.toLowerCase().includes(queryLower);
-      if (directULMatch || wildcardMatch || essenceWildcardMatch || orgMatch || e.fullLower.includes(queryLower)) {
+      const isMatch = localTagsOnly
+        ? e.localTags.some(t => normalizeHex(t).includes(normQueryForTags) || t.toLowerCase().includes(queryLower)) ||
+          e.reverseRefs.some(r => normalizeHex(r.localTag).includes(normQueryForTags) || r.localTag.toLowerCase().includes(queryLower))
+        : (directULMatch || wildcardMatch || essenceWildcardMatch ||
+           (e.org && e.org.name.toLowerCase().includes(queryLower)) ||
+           e.fullLower.includes(queryLower));
+      if (isMatch) {
         matches.push({ e, directULMatch, wildcardMatch, essenceWildcardMatch });
       }
     }
@@ -96,8 +104,14 @@
     const unregisteredCard = (normQuery.length === 32 && matches.length === 0)
       ? renderUnregisteredUL(normQuery, ctx) : '';
 
+    const isDynamicLocalTag = normQueryForTags.length === 4 && parseInt(normQueryForTags, 16) >= 0x8000;
+    const dynamicTagWarning = isDynamicLocalTag
+      ? `<div class="warn-banner"><strong>0x${normQueryForTags.toUpperCase()} looks like a dynamic local tag (&ge; 0x8000).</strong> ` +
+        `Dynamic local tags are defined per-file in the Primer Pack — check the file&rsquo;s Primer Pack for the matching 16-byte UL.</div>`
+      : '';
+
     const slice = matches.slice(0, MAX_DISPLAY);
-    resultsEl.innerHTML = unregisteredCard + slice.map(({ e, directULMatch, wildcardMatch, essenceWildcardMatch }) =>
+    resultsEl.innerHTML = dynamicTagWarning + unregisteredCard + slice.map(({ e, directULMatch, wildcardMatch, essenceWildcardMatch }) =>
       renderCard(e, raw, normQuery, queryLower, directULMatch, wildcardMatch, essenceWildcardMatch, ctx)
     ).join('\n');
 
@@ -117,4 +131,5 @@
     runSearch();
   }));
   hideDepCb.addEventListener('change', () => { hideDep = hideDepCb.checked; runSearch(); });
+  localTagsOnlyCb.addEventListener('change', () => { localTagsOnly = localTagsOnlyCb.checked; runSearch(); });
 })();

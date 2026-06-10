@@ -26,6 +26,23 @@ h1 { margin: 0 0 0.2rem; font-size: 1.7rem; }
   transition: border-color 0.15s;
 }
 #query:focus { border-color: #2563eb; }
+#local-tags-only-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.82rem;
+  color: #444;
+  cursor: pointer;
+  padding: 0.2rem 0.75rem;
+  border-radius: 8px;
+  border: 2px solid #ccc;
+  background: white;
+  white-space: nowrap;
+  transition: border-color 0.15s, background 0.1s;
+}
+#local-tags-only-wrap:hover { background: #e8f0fe; border-color: #2563eb; }
+#local-tags-only-wrap input { cursor: pointer; margin: 0; }
+#local-tags-only-wrap:has(input:checked) { border-color: #2563eb; background: #eff6ff; color: #1d4ed8; font-weight: 600; }
 
 #filters {
   display: flex;
@@ -152,6 +169,19 @@ mark { background: #fde68a; border-radius: 2px; padding: 0 1px; font-style: norm
   color: #1565c0;
   border-left: 2px solid #1565c0;
 }
+
+.warn-banner {
+  background: #fffbeb;
+  border: 1px solid #f59e0b;
+  border-left: 4px solid #f59e0b;
+  border-radius: 6px;
+  padding: 0.6rem 0.9rem;
+  margin-bottom: 0.6rem;
+  font-size: 0.82rem;
+  color: #78350f;
+  line-height: 1.5;
+}
+.warn-banner strong { color: #92400e; }
 
 #more-note {
   text-align: center;
