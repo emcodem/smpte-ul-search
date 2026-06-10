@@ -2,11 +2,15 @@
 
 An unofficial, zero-dependency browser-based search tool for the SMPTE register data (Labels, Types, Elements, Groups, Essence). Search by UL, Symbol, Name, Definition, or any other field. Also available as a JSON API via Vercel.
 
+**Search UI:** https://emcodem.github.io/smpte-ul-search/
+
+**JSON API:** https://smpte-ul-search.vercel.app/api/search
+
 > **Disclaimer:** Not affiliated with or endorsed by SMPTE. For authoritative information visit [smpte-ra.org](https://www.smpte-ra.org/).
 
 ## Using the search UI
 
-Open `index.html` directly in a browser — no build step, no server required.
+Open https://emcodem.github.io/smpte-ul-search/ in a browser, or clone the repo and open `index.html` directly — no build step, no server required.
 
 **Supported query formats:**
 
