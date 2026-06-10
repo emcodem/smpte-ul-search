@@ -8,7 +8,7 @@
     { name: 'Label Size',         desc: 'Remaining label length (fixed: 0e = 14 bytes)',    fixed: true  },
     { name: 'ISO Prefix',         desc: 'ISO/IEC designation (fixed: 2b)',                  fixed: true  },
     { name: 'SMPTE Designation',  desc: 'SMPTE organization code (fixed: 34)',              fixed: true  },
-    { name: 'Category',           desc: 'Registry category designator — 01 = Essence Elements, 02 = Sets/Packs, 04 = Dictionary Items, 7f = any (wildcard)', wildcard: true },
+    { name: 'Registry Category Designator', desc: 'Identifies the broad category — 01 = Dictionaries, 02 = Groups, 03 = Wrappers, 04 = Labels, 7f = any (wildcard)', wildcard: true },
     { name: 'Registry',           desc: 'Registry designator — identifies register type (05, 43, 53 …); must match exactly, 7f = any (wildcard)', wildcard: true },
     { name: 'Structure',          desc: 'Structure designator — must match exactly, 7f = any (wildcard)', wildcard: true },
     { name: 'Version',            desc: 'Registry version number — always ignored during matching (version-variable)', wildcard: true },
@@ -66,10 +66,10 @@
     const b15Names = essenceB15Names || {};
     switch (b) {
       // Bytes 5-8 (1-indexed): literal fixed identifiers for essence element keys
-      case 4: return { name: 'Essence Category',  desc: 'Essence element key identifier — fixed: 01' };
-      case 5: return { name: 'Essence Registry',  desc: 'Essence element key register — fixed: 02' };
-      case 6: return { name: 'Essence Structure', desc: 'Essence element key structure — fixed: 01' };
-      case 7: return { name: 'Essence Version',   desc: 'Essence element key version — fixed: 01' };
+      case 4: return { name: 'Registry Category Designator', desc: 'Dictionaries (fixed: 01)' };
+      case 5: return { name: 'Registry Designator',          desc: 'Essence element key register (fixed: 02)' };
+      case 6: return { name: 'Structure Designator',         desc: 'Essence element key structure (fixed: 01)' };
+      case 7: return { name: 'Version Number',               desc: 'Essence element key version (fixed: 01)' };
       // Bytes 13-16 (1-indexed) per ST 379-2:2010 §10.1 Table 3
       case 12: {
         const t = ESSENCE_ITEM_TYPES[val];
@@ -108,7 +108,7 @@
     }
     // Fall back to generic System Item descriptions
     switch (b) {
-      case 4:  return { name: 'Registry Category',    desc: 'Sets and Packs (fixed: 02)' };
+      case 4:  return { name: 'Registry Category Designator', desc: 'Groups (fixed: 02)' };
       case 5:  return { name: 'Registry Designator',  desc: 'Per SMPTE 336M — variable; register entries use 7f to match any version' };
       case 6:  return { name: 'Structure Designator', desc: 'Fixed-length Pack, Variable-length Pack or Local Set (fixed: 01)' };
       case 7:  return { name: 'Version Number',       desc: 'Registry version at point of registration — variable' };
