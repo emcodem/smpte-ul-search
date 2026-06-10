@@ -5,6 +5,7 @@ An unofficial, zero-dependency browser-based search tool for the SMPTE register 
 **Search UI:** https://emcodem.github.io/smpte-ul-search/
 
 **JSON API:** https://smpte-ul-search.vercel.app/api/search
+- Example: https://smpte-ul-search.vercel.app/api/search?q=3004&localTagsOnly=true
 
 > **Disclaimer:** Not affiliated with or endorsed by SMPTE. For authoritative information visit [smpte-ra.org](https://www.smpte-ra.org/).
 
