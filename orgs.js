@@ -1,7 +1,10 @@
 // SMPTE-RA Class 13/14 organization registry
 // Source: https://www.smpte-ra.org/class-1314-registrations
 // Key: bytes 8-9 of the normalized UL (0-indexed), e.g. "0d01"
-window.ORG_REGISTRY = {
+(function (f) {
+  if (typeof module !== 'undefined' && module.exports) module.exports = f();
+  else window.ORG_REGISTRY = f();
+})(function () { return {
   '0d00': { name: 'Public Use (generic)',            cls: 13 },
   '0d01': { name: 'AAF Association',                 cls: 13 },
   '0d02': { name: 'EBU/UER',                         cls: 13 },
@@ -54,4 +57,4 @@ window.ORG_REGISTRY = {
   '0e22': { name: 'RED',                             cls: 14 },
   '0e23': { name: 'CRIFST',                          cls: 14 },
   '0e24': { name: 'FUJIFILM',                        cls: 14 },
-};
+}; });

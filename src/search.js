@@ -60,43 +60,13 @@
       return;
     }
 
-    const queryLower        = raw.toLowerCase();
     const normQueryForTags  = normalizeHex(raw);
     const normQuery         = looksLikeHex(raw) ? normQueryForTags : '';
-    // Apply wildcard matching for any query that begins with the SMPTE OID prefix,
-    // since bytes 5-8 (registry designators) may be 7f in stored entries.
-    const doWildcard = normQuery.startsWith('060e2b34');
+    const queryLower        = raw.toLowerCase();
 
-    const matches = [];
-    for (const e of allEntries) {
-      if (!enabledRegs.has(e.register)) continue;
-      if (hideDep && e.isDeprecated)    continue;
-
-      let directULMatch = false;
-      let wildcardMatch = false;
-      let essenceWildcardMatch = false;
-      if (normQuery) {
-        directULMatch = e.normUL.includes(normQuery);
-        if (!directULMatch && doWildcard) {
-          const matchFn = normQuery.length < 32 ? ulPrefixMatchWithWildcard : ulMatchesWithWildcard;
-          wildcardMatch = matchFn(normQuery, e.normUL);
-          // For full essence element keys, 7f in item-designator bytes is also a wildcard (ST 2088)
-          if (!wildcardMatch && normQuery.length === 32 && normQuery.substring(8, 10) === '01' &&
-              e.register === 'Essence') {
-            essenceWildcardMatch = ulMatchesEssenceWildcard(normQuery, e.normUL);
-          }
-        }
-      }
-      const isMatch = localTagsOnly
-        ? e.localTags.some(t => normalizeHex(t).includes(normQueryForTags) || t.toLowerCase().includes(queryLower)) ||
-          e.reverseRefs.some(r => normalizeHex(r.localTag).includes(normQueryForTags) || r.localTag.toLowerCase().includes(queryLower))
-        : (directULMatch || wildcardMatch || essenceWildcardMatch ||
-           (e.org && e.org.name.toLowerCase().includes(queryLower)) ||
-           e.fullLower.includes(queryLower));
-      if (isMatch) {
-        matches.push({ e, directULMatch, wildcardMatch, essenceWildcardMatch });
-      }
-    }
+    const matches = window.SMPTE.searchCore.matchEntries({
+      allEntries, enabledRegs, hideDep, localTagsOnly, raw, ulMatch: window.UL_MATCH,
+    });
 
     statusEl.textContent = `${matches.length.toLocaleString()} result${matches.length !== 1 ? 's' : ''}`;
     statusEl.className = '';

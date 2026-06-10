@@ -100,6 +100,10 @@
     return { allEntries, ulIndex, essenceB14Names, essenceB15Names, registers, idleStatus };
   }
 
-  window.SMPTE = window.SMPTE || {};
-  window.SMPTE.entries = { buildAllEntries, orgForNormUL };
+  if (typeof module !== 'undefined' && module.exports) {
+    module.exports = { buildAllEntries, orgForNormUL };
+  } else {
+    window.SMPTE = window.SMPTE || {};
+    window.SMPTE.entries = { buildAllEntries, orgForNormUL };
+  }
 })();

@@ -104,6 +104,8 @@ foreach ($entry in $entries) {
 }
 
 $json = $entries | ConvertTo-Json -Compress -Depth 5
-"window.SMPTE_ENTRIES=$json;" | Set-Content -Path 'data.js' -Encoding UTF8
+$header = "(function(f){if(typeof module!=='undefined'&&module.exports)module.exports=f();else window.SMPTE_ENTRIES=f();})(function(){return "
+$footer = ";});"
+($header + $json + $footer) | Set-Content -Path 'data.js' -Encoding UTF8
 
 Write-Host "Wrote data.js with $($entries.Count) entries."

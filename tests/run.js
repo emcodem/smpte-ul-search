@@ -12,12 +12,9 @@ const fs   = require('fs');
 const path = require('path');
 
 // ---------------------------------------------------------------------------
-// Load data.js with a window shim (data.js does: window.SMPTE_ENTRIES = [...])
+// Load data and system items
 // ---------------------------------------------------------------------------
-const global_window = {};
-global.window = global_window;
-require(path.resolve(__dirname, '..', 'data.js'));
-const SMPTE_ENTRIES = global_window.SMPTE_ENTRIES;
+const SMPTE_ENTRIES = require(path.resolve(__dirname, '..', 'data.js'));
 const SYSTEM_ITEMS = require(path.resolve(__dirname, '..', 'systemItems.js'));
 
 if (!SMPTE_ENTRIES || !SMPTE_ENTRIES.length) {

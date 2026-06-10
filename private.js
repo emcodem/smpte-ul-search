@@ -13,7 +13,10 @@
 // - FFmpeg: https://github.com/FFmpeg/FFmpeg
 // - Individual vendor SDKs and technical specifications
 
-window.PRIVATE_ULS = {
+(function (f) {
+  if (typeof module !== 'undefined' && module.exports) module.exports = f();
+  else window.PRIVATE_ULS = f();
+})(function () { return {
   // ===== MISB Systems (0e01) =====
   // Expected: sensors, targeting, video motion metadata, etc.
   // Sources: https://www.misb.org
@@ -150,4 +153,4 @@ window.PRIVATE_ULS = {
   // ===== FUJIFILM (0e24) =====
   // Known: X-Series cinema cameras
   // TODO: FUJIFILM technical documentation
-};
+}; });

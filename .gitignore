@@ -1,2 +1,4 @@
 .claude
 tests/results/
+node_modules/
+.vercel/

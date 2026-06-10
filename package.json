@@ -1,0 +1,13 @@
+{
+  "name": "smpte-search",
+  "version": "1.0.0",
+  "private": true,
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "dev": "vercel dev",
+    "test": "node tests/run.js && node tests/test-api.js"
+  },
+  "devDependencies": {
+    "vercel": "^54.11.1"
+  }
+}
