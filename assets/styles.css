@@ -114,6 +114,8 @@ h1 { margin: 0 0 0.2rem; font-size: 1.7rem; }
 .ul-wc-active { color: #d97706; font-weight: 700; cursor: help; }
 /* bytes 8-15: item designators — literal values */
 .ul-item { color: #444; cursor: help; }
+/* out-of-spec byte value — red */
+.ul-warn { color: #dc2626; font-weight: 700; cursor: help; }
 /* non-matched bytes when a query is active */
 .ul-dim { color: #ccc !important; }
 
@@ -182,6 +184,7 @@ mark { background: #fde68a; border-radius: 2px; padding: 0 1px; font-style: norm
   line-height: 1.5;
 }
 .warn-banner strong { color: #92400e; }
+.warn-list { margin: 0.3rem 0 0 1.2rem; padding: 0; }
 
 #more-note {
   text-align: center;
@@ -249,6 +252,9 @@ mark { background: #fde68a; border-radius: 2px; padding: 0 1px; font-style: norm
 .details-table tr.byte-wc-active td:nth-child(2) { color: #d97706; font-weight: 700; }
 .details-table tr.byte-wc-active td:last-child em { color: #d97706; font-style: normal; font-weight: 600; }
 .details-table tr.byte-item td  { color: #444; }
+.details-table tr.byte-warn td:first-child,
+.details-table tr.byte-warn td:nth-child(2) { color: #dc2626; font-weight: 700; }
+.details-table .byte-warn-note { color: #dc2626; font-style: normal; font-weight: 600; }
 .details-table td.mono { font-family: "SFMono-Regular", Consolas, monospace; }
 
 /* --- Disclaimer block --- */

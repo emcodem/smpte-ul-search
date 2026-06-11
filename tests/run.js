@@ -1,118 +1,90 @@
 'use strict';
 /**
- * Test runner: searches each label from labels.json against the SMPTE register
- * and writes a timestamped result file to results/.
+ * Corpus runner: searches each label from labels.json against the SMPTE register
+ * using the real matcher (buildAllEntries + matchEntries — the same path the
+ * browser and the Vercel API use; no private copy of the matching logic).
  *
- * Usage:
- *   node tests/run.js
- *   node tests/run.js --out tests/results/baseline.json
+ * As a library:  const { runCorpus } = require('./run.js')
+ * As a CLI:      node tests/run.js [--out tests/results/snapshot.json]
+ *                (writes a timestamped snapshot for ad-hoc diffing with diff.js)
  */
 
 const fs   = require('fs');
 const path = require('path');
 
-// ---------------------------------------------------------------------------
-// Load data and system items
-// ---------------------------------------------------------------------------
 const SMPTE_ENTRIES = require(path.resolve(__dirname, '..', 'data.js'));
-const SYSTEM_ITEMS = require(path.resolve(__dirname, '..', 'systemItems.js'));
+const SYSTEM_ITEMS  = require(path.resolve(__dirname, '..', 'systemItems.js'));
+const orgRegistry   = require(path.resolve(__dirname, '..', 'orgs.js'));
 
 if (!SMPTE_ENTRIES || !SMPTE_ENTRIES.length) {
   console.error('ERROR: SMPTE_ENTRIES not found — run build-data.ps1 first');
   process.exit(1);
 }
 
-// ---------------------------------------------------------------------------
-// UL matching functions — shared module (single source of truth)
-// ---------------------------------------------------------------------------
-const { normalizeHex, ulMatchesWithWildcard, ulPrefixMatchWithWildcard, ulMatchesEssenceWildcard } =
-  require(path.resolve(__dirname, '..', 'ul-match.js'));
+const ulMatch = require(path.resolve(__dirname, '..', 'ul-match.js'));
+const { buildAllEntries } = require(path.resolve(__dirname, '..', 'src', 'entries.js'));
+const { matchEntries }    = require(path.resolve(__dirname, '..', 'src', 'search-core.js'));
 
-// ---------------------------------------------------------------------------
-// Build entry list (mirrors allEntries in index.html)
-// Merge SMPTE_ENTRIES with System Items from 326M/385M
-// ---------------------------------------------------------------------------
-const allEntries = [
-  ...SMPTE_ENTRIES.map(e => ({
-    register:   e.register,
-    symbol:     e.symbol   || '',
-    name:       e.name     || '',
-    normUL:     normalizeHex(e.ul || ''),
-    isDeprecated: !!e.deprecated,
-  })),
-  ...SYSTEM_ITEMS.map(e => ({
-    register:   e.register,
-    symbol:     e.symbol   || '',
-    name:       e.name     || '',
-    normUL:     e.ul.replace(/\./g, '').toLowerCase(),
-    isDeprecated: false,
-  })),
-];
+const built       = buildAllEntries(SMPTE_ENTRIES, SYSTEM_ITEMS, ulMatch.normalizeHex, orgRegistry);
+const enabledRegs = new Set(built.registers);
 
-// ---------------------------------------------------------------------------
-// Search a single label, returns array of matching entry names
-// ---------------------------------------------------------------------------
+// Search a single label via the real matcher, returns matching entries.
 function searchLabel(dotLabel) {
-  const normQuery = normalizeHex(dotLabel);
-  if (!normQuery) return [];
+  const matches = matchEntries({
+    allEntries: built.allEntries,
+    enabledRegs,
+    hideDep: false,
+    localTagsOnly: false,
+    raw: dotLabel,
+    ulMatch,
+  });
+  return matches.map(({ e }) => ({
+    register: e.register, name: e.name, symbol: e.symbol, deprecated: e.isDeprecated,
+  }));
+}
 
-  const doWildcard = normQuery.startsWith('060e2b34');
-  const hits = [];
+// Run every label in labels.json and return a result object (the snapshot/baseline shape).
+function runCorpus() {
+  const labelsFile = path.resolve(__dirname, 'labels.json');
+  const labelsData = JSON.parse(fs.readFileSync(labelsFile, 'utf8'));
+  const labels     = labelsData.labels;
 
-  for (const e of allEntries) {
-    let match = e.normUL.includes(normQuery);
-    if (!match && doWildcard) {
-      const matchFn = normQuery.length < 32 ? ulPrefixMatchWithWildcard : ulMatchesWithWildcard;
-      match = matchFn(normQuery, e.normUL);
-      if (!match && normQuery.length === 32 && normQuery.substring(8, 10) === '01' && e.register === 'Essence') {
-        match = ulMatchesEssenceWildcard(normQuery, e.normUL);
-      }
-    }
-    if (match) hits.push({ register: e.register, name: e.name, symbol: e.symbol, deprecated: e.isDeprecated });
+  const results = [];
+  let withHits = 0;
+  for (const label of labels) {
+    const hits = searchLabel(label);
+    if (hits.length > 0) withHits++;
+    results.push({ label, hits: hits.length, entries: hits });
   }
-  return hits;
+
+  return {
+    source:        labelsData.source,
+    totalLabels:   labels.length,
+    withResults:   withHits,
+    noResults:     labels.length - withHits,
+    entriesCount:  built.allEntries.length,
+    results,
+  };
 }
+
+module.exports = { runCorpus, searchLabel };
 
 // ---------------------------------------------------------------------------
-// Main
+// CLI: write a timestamped snapshot (for diff.js). Not a pass/fail gate —
+// regression.test.js is the gate wired into `npm test`.
 // ---------------------------------------------------------------------------
-const labelsFile = path.resolve(__dirname, 'labels.json');
-const labelsData = JSON.parse(fs.readFileSync(labelsFile, 'utf8'));
-const labels = labelsData.labels;
+if (require.main === module) {
+  const run = runCorpus();
+  console.log(`Loaded ${run.totalLabels} labels from labels.json`);
+  console.log(`Searching against ${run.entriesCount.toLocaleString()} SMPTE entries…`);
+  console.log(`Done — ${run.withResults} labels matched, ${run.noResults} unresolved`);
 
-console.log(`Loaded ${labels.length} labels from ${path.basename(labelsFile)}`);
-console.log(`Searching against ${allEntries.length.toLocaleString()} SMPTE entries…`);
+  const outArg = process.argv.indexOf('--out');
+  const outFile = (outArg !== -1 && process.argv[outArg + 1])
+    ? path.resolve(process.argv[outArg + 1])
+    : path.resolve(__dirname, 'results', `run-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.json`);
 
-const results = [];
-let withHits = 0;
-
-for (const label of labels) {
-  const hits = searchLabel(label);
-  if (hits.length > 0) withHits++;
-  results.push({ label, hits: hits.length, entries: hits });
+  fs.mkdirSync(path.dirname(outFile), { recursive: true });
+  fs.writeFileSync(outFile, JSON.stringify({ timestamp: new Date().toISOString(), ...run }, null, 2));
+  console.log(`Results written to ${outFile}`);
 }
-
-const noHits = labels.length - withHits;
-console.log(`Done — ${withHits} labels matched, ${noHits} unresolved`);
-
-// Determine output path
-const outArg = process.argv.indexOf('--out');
-let outFile;
-if (outArg !== -1 && process.argv[outArg + 1]) {
-  outFile = path.resolve(process.argv[outArg + 1]);
-} else {
-  const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-  outFile = path.resolve(__dirname, 'results', `run-${ts}.json`);
-}
-
-const output = {
-  timestamp:    new Date().toISOString(),
-  source:       labelsData.source,
-  totalLabels:  labels.length,
-  withResults:  withHits,
-  noResults:    noHits,
-  results,
-};
-fs.mkdirSync(path.dirname(outFile), { recursive: true });
-fs.writeFileSync(outFile, JSON.stringify(output, null, 2));
-console.log(`Results written to ${outFile}`);

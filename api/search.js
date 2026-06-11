@@ -3,6 +3,7 @@
 const {
   normalizeHex, looksLikeHex,
   ulMatchesWithWildcard, ulPrefixMatchWithWildcard, ulMatchesEssenceWildcard,
+  classifyUL, KIND,
 } = require('../ul-match.js');
 const { matchEntries }    = require('../src/search-core.js');
 
@@ -29,6 +30,7 @@ function getCache() {
 const ulMatch = {
   normalizeHex, looksLikeHex,
   ulMatchesWithWildcard, ulPrefixMatchWithWildcard, ulMatchesEssenceWildcard,
+  classifyUL, KIND,
 };
 
 module.exports = function handler(req, res) {

@@ -13,7 +13,8 @@ There is no server, no build step for the UI, and no npm. Open `index.html` in a
 | File | Purpose |
 |---|---|
 | `index.html` | Shell page — `<head>` meta, CSS/script tags in dependency order, and the static HTML body (search input, filter checkboxes, result container). Contains no logic. |
-| `ul-match.js` | UL matching utilities shared between the browser and Node test runner. Exports `normalizeHex`, `looksLikeHex`, `ulMatchesWithWildcard`, `ulPrefixMatchWithWildcard`, `ulMatchesEssenceWildcard`. Loaded as a `<script>` in the browser (sets `window.UL_MATCH`) and via `require()` in Node. |
+| `ul-spec.js` | **Single source of truth for UL structure.** Classifies a normalised UL (`classifyUL` → essence-element / system-item / generic-smpte / non-smpte) and defines the per-byte match policy (`byteMatchRule`) and essence masked-byte set. Both the matcher (`ul-match.js`, `search-core.js`) and the renderers (`byte-info.js` via re-export) derive from it, so the SMPTE rules live in exactly one place. UMD: sets `window.UL_SPEC` in the browser (loaded before `ul-match.js`), `require()` in Node. See classifier definitions and standard references inline. |
+| `ul-match.js` | UL matching utilities shared between the browser and Node test runner. Applies the policy from `ul-spec.js` — `matchBytes` reads `byteMatchRule`; it holds no classification logic of its own. Exports `normalizeHex`, `looksLikeHex`, `ulMatchesWithWildcard`, `ulPrefixMatchWithWildcard`, `ulMatchesEssenceWildcard`, and re-exports `classifyUL`/`KIND`. Loaded as a `<script>` in the browser (sets `window.UL_MATCH`) and via `require()` in Node. |
 | `orgs.js` | SMPTE-RA Class 13/14 organisation registry. Maps bytes 8–9 of a normalised UL (e.g. `"0d01"`) to `{ name, cls }`. Sets `window.ORG_REGISTRY`. Source: smpte-ra.org/class-1314-registrations. |
 | `private.js` | Manually curated Class-14 (Private Use) UL definitions reverse-engineered from vendor SDKs and public technical docs. Sets `window.PRIVATE_ULS` (keyed by 32-char normalised UL). Currently contains one entry (Sony S-Log3); the rest are documented placeholders for future population. |
 | `systemItems.js` | Hard-coded SMPTE System Item UL definitions for keys defined only in SMPTE prose standards (326M, 385M) and absent from the public register XML. Sets `window.SMPTE_SYSTEM_ITEMS`. Also exports via `module.exports` for the Node test runner. |
@@ -37,7 +38,7 @@ Browser-only application modules. Each file wraps its code in an IIFE and attach
 | File | `window.SMPTE` key | Purpose |
 |---|---|---|
 | `src/dom-utils.js` | `dom` | HTML-safe string helpers: `escHtml`, `escRegex`, and `hl` (highlight query matches with `<mark>`). |
-| `src/byte-info.js` | `byteInfo` | Static UL byte metadata (`UL_BYTE_INFO` array, essence/system-item type maps) and classifier functions: `isEssenceElementKey`, `isSystemItemKey`, `essenceByteInfo`, `systemItemByteInfo`. |
+| `src/byte-info.js` | `byteInfo` | Static UL byte metadata (`UL_BYTE_INFO` array, essence/system-item type maps), ST 366M validation (`validateULQueryBytes`, `genericByteInfo`), and per-byte description helpers (`essenceByteInfo`, `systemItemByteInfo`). Its `isEssenceElementKey`/`isSystemItemKey` delegate to `ul-spec.js` (the renderers import them from here). |
 | `src/entries.js` | `entries` | `buildAllEntries(rawEntries, systemItems, normalizeHex, orgRegistry)` — merges and normalises both data sources, builds `ulIndex` (a `Map` keyed by UL for O(1) record-name lookup), and derives essence element lookup maps (`essenceB14Names`, `essenceB15Names`). Returns a `ctx`-compatible object. |
 | `src/render-ul.js` | `renderUL` | `renderUL(ul, normQuery, entry, ctx)` — renders a single UL as colour-coded, tooltip-annotated byte spans. Highlights matched bytes, marks wildcards, and enriches byte 9 tooltips with org data. |
 | `src/render-details.js` | `renderDetails` | `renderDetails(e, normQuery, ctx)` — renders the expandable Details block for a registered entry. Internally uses `renderOrgSection`, `renderULByteTable`, `renderFieldsSection`, `renderRecordsSection`, `renderRefsSection`. Exports `renderOrgSection` for reuse by `render-unregistered.js`. |
@@ -63,14 +64,18 @@ Source SMPTE register XML files (read-only input to `build-data.ps1`). Do not ed
 
 ## `tests/`
 
-Manual regression tests for the UL matching logic (Node.js, no test framework).
+Regression tests for the UL matching logic (Node.js, no test framework). `npm test` runs the
+matching gate, the hex-normalization suite, and the API contract tests — all exit non-zero on failure.
 
 | File | Purpose |
 |---|---|
-| `tests/run.js` | Loads `data.js` + `systemItems.js` via a `window` shim, then searches each UL in `labels.json` using the same matching logic as the browser. Writes timestamped JSON result files to `tests/results/`. Run with `node tests/run.js`. Pass `--out tests/results/baseline.json` to update the baseline. |
-| `tests/diff.js` | Compares two result files and reports gains (new matches) and regressions (lost matches). Exit code 0 = no regressions. Run with `node tests/diff.js <before.json> <after.json>`. |
-| `tests/labels.json` | 138 UL labels extracted from a real MXF file dump, used as the test corpus. |
-| `tests/results/baseline.json` | Current expected result set (gitignored directory, baseline committed separately). Compare new runs against this to detect regressions. |
+| `tests/regression.test.js` | **The matching gate (in `npm test`).** Runs every UL in `labels.json` through the real matcher (`runCorpus` from `run.js`) and asserts, per label, the **same hit count AND the same set of card-names** as the committed `tests/baseline.json`. Any count change, name swap, or gained/lost match fails (exit 1). Pass `--update` to regenerate the baseline after an intended change. |
+| `tests/baseline.json` | **Committed** expected output: `label → { hits, names[] }`. The source of truth the gate checks against. Refresh only with `node tests/regression.test.js --update` once a change is confirmed correct. |
+| `tests/run.js` | Searches each UL in `labels.json` via the shared matcher. Exports `runCorpus()` (used by the gate). As a CLI it writes a timestamped snapshot to `tests/results/` (`node tests/run.js [--out …]`) for ad-hoc investigation — it is **not** itself a pass/fail gate. |
+| `tests/diff.js` | Lenient, count-only comparison of two snapshot files — reports gains/losses for investigating an intended change. Exit 1 only when a label drops to zero hits. Use the gate, not this, for pass/fail. |
+| `tests/normalizeHex.test.js` | Hex-normalization + dynamic-local-tag assertions (in `npm test`). |
+| `tests/test-api.js` | Vercel API handler contract tests — filters, input syntaxes, error handling (in `npm test`). |
+| `tests/labels.json` | 138 UL labels extracted from a real MXF file dump — the test corpus. |
 
 ---
 
@@ -84,23 +89,40 @@ Open `index.html` in any modern browser. No server required.
 .\build-data.ps1
 ```
 
-### Run the regression test
+### Run the tests
 ```powershell
-node tests/run.js --out tests/results/run-$(Get-Date -Format 'yyyy-MM-ddTHH-mm-ss').json
-node tests/diff.js tests/results/baseline.json tests/results/run-<timestamp>.json
+npm test     # matching gate (138 ULs: count + card-names) + normalizeHex + API contract
 ```
 
-### Update the baseline (when improvements are intentional)
+### Update the baseline (when a matching change is intentional)
 ```powershell
-node tests/run.js --out tests/results/baseline.json
+node tests/regression.test.js --update   # then review the tests/baseline.json diff before committing
+```
+
+### Investigate what a change altered (ad-hoc, lenient)
+```powershell
+node tests/run.js --out tests/results/run-$(Get-Date -Format 'yyyy-MM-ddTHH-mm-ss').json
+node tests/diff.js tests/results/<before>.json tests/results/run-<timestamp>.json
 ```
 
 ---
 
-## UL matching rules (SMPTE ST 336)
+## UL matching rules (SMPTE ST 336 / 366M)
 
-- **Byte 8 (Version Number)** is always ignored during matching.
-- **Bytes 5–7 (Category / Registry / Structure)** with value `7f` match any value (wildcard zone).
-- **Essence element keys** (byte 5 = `01`) are matched via `ulMatchesEssenceWildcard` instead — `7f` is a wildcard in bytes 9–16, and bytes 14 + 16 (Element Count / Element Number) are always masked.
-- **System Item keys** (SMPTE 326M/385M): byte 16 (Metadata Block Count) with value `ff` matches any count.
+These rules are encoded once in `ul-spec.js` (`classifyUL` + `byteMatchRule`); the matcher and
+renderers both read from there. The kind of a UL selects which rules apply:
+
+- **Generic SMPTE UL** — byte 8 (Version Number) is always ignored; bytes 5–7 (Category / Registry /
+  Structure) with value `7f` match any value (the ST 366M wildcard zone); all other bytes literal.
+- **Essence element key** — `06 0e 2b 34` + bytes 5–7 = `010201` + bytes 9–12 = `0d010301` (version
+  byte ignored; the `0d010301` requirement separates real element keys from other `0102…` essence
+  dictionary labels). Matched via `ulMatchesEssenceWildcard`: bytes 1–8 literal, `7f` is a wildcard
+  in bytes 9–16, and bytes 14 + 16 (Element Count / Element Number) are always masked (ST 379-2 §10.1).
+- **System Item key** (SMPTE 379-1 §6.2.1 / 326M / 385M) — byte 5 = `02`, byte 7 = `01`,
+  bytes 9–12 = `0d010301`, byte 13 ∈ {`04` CP, `14` GC}. Byte 16 (Metadata Block Count) with value
+  `ff` matches any count.
 - Prefix queries (fewer than 16 bytes) use `ulPrefixMatchWithWildcard`.
+
+> Historical note: the matcher used to classify essence keys by byte 5 = `01` alone, which swept in
+> every Dictionaries-category UL (Metadata/Types dictionaries) and suppressed the version-ignore rule
+> for them. The `010201` + `0d010301` definition above fixes that.

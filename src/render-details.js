@@ -10,6 +10,7 @@
     isSystemItemKey,
     essenceByteInfo,
     systemItemByteInfo,
+    genericByteInfo,
   } = window.SMPTE.byteInfo;
   const { renderUL } = window.SMPTE.renderUL;
 
@@ -34,19 +35,22 @@
       const val = normUL.substring(b * 2, b * 2 + 2);
       const eb  = isEssenceEl  ? essenceByteInfo(b, val, normUL, essenceB15Names)
                 : isSystemItem ? systemItemByteInfo(b, val, entry)
-                : null;
+                : genericByteInfo(b, val, normUL);
       const rowName = eb ? eb.name : info.name;
       const rowDesc = eb ? eb.desc : info.desc;
       // Wildcard only in bytes 9-16 (b >= 8) for essence elements; bytes 5-8 are fixed literals
       const isAnyEssenceWc = isEssenceEl && b >= 8 && !info.wildcard && val === '7f';
       const isActiveWildcard = (!isEssenceEl && info.wildcard && val === '7f') || isAnyEssenceWc;
       const rowCls = info.fixed ? 'byte-fixed'
-                   : (info.wildcard && !isEssenceEl) ? (isActiveWildcard ? 'byte-wc-active' : 'byte-wc')
                    : isAnyEssenceWc ? 'byte-wc-active'
+                   : (info.wildcard && !isEssenceEl && isActiveWildcard) ? 'byte-wc-active'
+                   : (eb && eb.warning) ? 'byte-warn'
+                   : (info.wildcard && !isEssenceEl) ? 'byte-wc'
                    : 'byte-item';
       const note = (!eb && isAnyEssenceWc)
         ? ' <em>— wildcard, any value (ST 2088 essence element)</em>'
         : (!eb && !isEssenceEl && isActiveWildcard) ? ' <em>— wildcard, matches any value</em>' : '';
+      const warnNote = (eb && eb.warning) ? ' <em class="byte-warn-note">⚠ out-of-spec per SMPTE ST 366M</em>' : '';
       let queryHint = '';
       // When the register entry has 7f here but the query had a specific byte, show what it means.
       if (isAnyEssenceWc && normQuery && normQuery.length === 32) {
@@ -77,7 +81,7 @@
           <td class="mono">${b + 1}</td>
           <td class="mono">${escHtml(val)}</td>
           <td>${escHtml(rowName)}</td>
-          <td>${escHtml(rowDesc)}${note}${queryHint}</td>
+          <td>${escHtml(rowDesc)}${warnNote}${note}${queryHint}</td>
         </tr>`;
     }).join('');
 

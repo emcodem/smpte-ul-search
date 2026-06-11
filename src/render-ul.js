@@ -9,6 +9,7 @@
     isSystemItemKey,
     essenceByteInfo,
     systemItemByteInfo,
+    genericByteInfo,
   } = window.SMPTE.byteInfo;
 
   function renderUL(ul, normQuery, entry, ctx) {
@@ -59,7 +60,7 @@
       let desc = info.desc;
       const eb = isEssenceEl  ? essenceByteInfo(b, byteHex, normUL, essenceB15Names)
                : isSystemItem ? systemItemByteInfo(b, byteHex, entry)
-               : null;
+               : genericByteInfo(b, byteHex, normUL);
       if (eb) {
         name = eb.name; desc = eb.desc;
       } else if (b === 8) {
@@ -71,7 +72,8 @@
       // For essence elements, 7f is a wildcard only in bytes 9-16 (not 5-8 which are fixed literals)
       const isAnyEssenceWc = isEssenceEl && b >= 8 && !info.wildcard && byteHex === '7f';
       if (isAnyEssenceWc && b < 12) desc = 'wildcard — any value (ST 2088 essence element)';
-      const tooltip = `Byte ${b + 1}: ${name} — ${desc}`;
+      const warnSuffix = (eb && eb.warning) ? ' ⚠ out-of-spec per SMPTE ST 366M' : '';
+      const tooltip = `Byte ${b + 1}: ${name} — ${desc}${warnSuffix}`;
 
       // Bytes 5-8 are the standard wildcard zone for non-essence ULs only
       const isActiveWildcard = (!isEssenceEl && info.wildcard && byteHex === '7f') || isAnyEssenceWc;
@@ -81,10 +83,14 @@
       let cls;
       if (info.fixed) {
         cls = 'ul-fixed';
-      } else if (info.wildcard && !isEssenceEl) {
-        cls = isActiveWildcard ? 'ul-wc-active' : 'ul-wc-range';
       } else if (isAnyEssenceWc) {
         cls = 'ul-wc-active';
+      } else if (info.wildcard && !isEssenceEl && isActiveWildcard) {
+        cls = 'ul-wc-active';
+      } else if (eb && eb.warning) {
+        cls = 'ul-warn';
+      } else if (info.wildcard && !isEssenceEl) {
+        cls = 'ul-wc-range';
       } else {
         cls = 'ul-item';
       }

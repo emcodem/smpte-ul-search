@@ -1,7 +1,19 @@
 // UL matching utilities — shared between index.html (browser) and tests/run.js (Node.js).
 // Loaded as a plain <script> tag in the browser (sets window.UL_MATCH) or via require() in Node.
+//
+// The structural rules (which bytes wildcard, which are ignored, what counts as an essence /
+// system-item key) live in ul-spec.js — this module only applies them. ul-spec must be loaded
+// first (window.UL_SPEC in the browser; require() in Node).
 (function (exports) {
   'use strict';
+
+  var spec = (typeof module !== 'undefined' && module.exports)
+    ? require('./ul-spec.js')
+    : window.UL_SPEC;
+  var KIND                 = spec.KIND;
+  var classifyUL           = spec.classifyUL;
+  var byteMatchRule        = spec.byteMatchRule;
+  var ESSENCE_MASKED_BYTES = spec.ESSENCE_MASKED_BYTES;
 
   function normalizeHex(s) {
     return s
@@ -17,30 +29,21 @@
     return stripped.length >= 2 && /^[0-9a-f]+$/.test(stripped);
   }
 
-  // Per SMPTE ST 336: byte 5 (bytePos 4) is the Category Designator — wildcarded only on 7f.
-  // Byte 6 (bytePos 5) is the Registry Designator — distinct values (05, 43, 53 …) identify
-  // fundamentally different register types and must match exactly; wildcarded only on 7f.
-  // Byte 7 (bytePos 6) is the Structure Designator — also matched exactly; wildcarded only on 7f.
-  // Byte 8 (bytePos 7) is the Version Number — purely a registry revision counter, always skipped.
-  // Essence element keys (category byte = 01) use bytes 5-8 as fixed structural identifiers
-  // rather than registry designators, so they are excluded from this wildcard zone and matched
-  // via ulMatchesEssenceWildcard instead.
-  // Bytes 9-15 (bytePos 8-14) are Item Designators — exact match.
-  // Byte 16 (bytePos 15) for System Item ULs (SMPTE 326M/385M) uses FF as wildcard for metadata block count.
+  // Compare a query against an entry UL byte-by-byte, applying the per-byte match policy from
+  // ul-spec (literal / 7f-wildcard zone / ignored version byte / ff-wildcard metadata count).
+  // The query's classification (essence / system-item / generic) selects which policy applies.
   function matchBytes(searchHex, entryUL, byteCount) {
-    const isEssenceEl = searchHex.substring(8, 10) === '01';
-    const isSystemItem =
-      searchHex.startsWith('060e2b3402') &&
-      searchHex.length >= 28 &&
-      searchHex.substring(16, 24) === '0d010301' &&
-      searchHex.substring(24, 28) === '0401';
+    const kind = classifyUL(searchHex);
     for (let bytePos = 0; bytePos < byteCount; bytePos++) {
       const i = bytePos * 2;
       const a = searchHex.substring(i, i + 2);
       const b = entryUL.substring(i, i + 2);
-      if (!isEssenceEl && bytePos === 7) continue;
-      if (!isEssenceEl && (bytePos === 4 || bytePos === 5 || bytePos === 6) && (a === '7f' || b === '7f')) continue;
-      if (isSystemItem && bytePos === 15 && (a === 'ff' || b === 'ff')) continue;
+      switch (byteMatchRule(kind, bytePos)) {
+        case 'ignore':     continue;
+        case 'wildcard7f': if (a === '7f' || b === '7f') continue; break;
+        case 'wildcardFF': if (a === 'ff' || b === 'ff') continue; break;
+        // 'literal' falls through to the equality check
+      }
       if (a !== b) return false;
     }
     return true;
@@ -61,15 +64,15 @@
   // entries, since other registers treat 7f as a literal value in item-designator bytes.
   function ulMatchesEssenceWildcard(searchUL, entryUL) {
     if (searchUL.length !== 32 || entryUL.length !== 32) return false;
-    for (let i = 0; i < 32; i += 2) {
+    for (let bytePos = 0; bytePos < 16; bytePos++) {
+      const i = bytePos * 2;
       const a = searchUL.substring(i, i + 2);
       const b = entryUL.substring(i, i + 2);
-      // Bytes 1-8 (i < 16) are literal — bytes 1-4 fixed SMPTE prefix,
-      // bytes 5-8 are the fixed 01020101 essence element identifier.
-      if (i < 16) { if (a !== b) return false; continue; }
-      // Byte 14 (i=26, Essence Element Count) and byte 16 (i=30, Essence Element Number)
-      // are per-track values that vary between files — always masked per ST 379-2:2010 §10.1.
-      if (i === 26 || i === 30) continue;
+      // Bytes 1-8 are literal — bytes 1-4 fixed SMPTE prefix, bytes 5-8 the essence element
+      // structural identifier (Dictionaries / Essence dictionaries / structure / version).
+      if (bytePos < 8) { if (a !== b) return false; continue; }
+      // Essence Element Count (byte 14) and Number (byte 16) are per-track — always masked.
+      if (ESSENCE_MASKED_BYTES.indexOf(bytePos) !== -1) continue;
       if (a === '7f' || b === '7f') continue;
       if (a !== b) return false;
     }
@@ -81,4 +84,8 @@
   exports.ulMatchesWithWildcard     = ulMatchesWithWildcard;
   exports.ulPrefixMatchWithWildcard = ulPrefixMatchWithWildcard;
   exports.ulMatchesEssenceWildcard  = ulMatchesEssenceWildcard;
+  // Re-exported from ul-spec so consumers that already receive the UL_MATCH bundle
+  // (search-core, the Vercel API) can classify ULs without a second dependency.
+  exports.classifyUL                = classifyUL;
+  exports.KIND                      = KIND;
 })(typeof module !== 'undefined' ? module.exports : (window.UL_MATCH = {}));

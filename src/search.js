@@ -80,8 +80,15 @@
         `Dynamic local tags are defined per-file in the Primer Pack — check the file&rsquo;s Primer Pack for the matching 16-byte UL.</div>`
       : '';
 
+    const ulIssues = window.SMPTE.byteInfo.validateULQueryBytes(normQuery);
+    const ulByteWarning = ulIssues.length
+      ? `<div class="warn-banner"><strong>Query contains out-of-spec UL bytes per SMPTE ST 366M:</strong><ul class="warn-list">${
+          ulIssues.map(i => `<li>${i}</li>`).join('')
+        }</ul></div>`
+      : '';
+
     const slice = matches.slice(0, MAX_DISPLAY);
-    resultsEl.innerHTML = dynamicTagWarning + unregisteredCard + slice.map(({ e, directULMatch, wildcardMatch, essenceWildcardMatch }) =>
+    resultsEl.innerHTML = dynamicTagWarning + ulByteWarning + unregisteredCard + slice.map(({ e, directULMatch, wildcardMatch, essenceWildcardMatch }) =>
       renderCard(e, raw, normQuery, queryLower, directULMatch, wildcardMatch, essenceWildcardMatch, ctx)
     ).join('\n');
 

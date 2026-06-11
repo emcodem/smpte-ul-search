@@ -32,6 +32,8 @@
     var ulMatchesWithWildcard     = p.ulMatch.ulMatchesWithWildcard;
     var ulPrefixMatchWithWildcard = p.ulMatch.ulPrefixMatchWithWildcard;
     var ulMatchesEssenceWildcard  = p.ulMatch.ulMatchesEssenceWildcard;
+    var classifyUL                = p.ulMatch.classifyUL;
+    var KIND                      = p.ulMatch.KIND;
 
     var queryLower       = raw.toLowerCase();
     var normQueryForTags = normalizeHex(raw);
@@ -54,7 +56,7 @@
           var matchFn = normQuery.length < 32 ? ulPrefixMatchWithWildcard : ulMatchesWithWildcard;
           wildcardMatch = matchFn(normQuery, e.normUL);
           if (!wildcardMatch && normQuery.length === 32
-              && normQuery.substring(8, 10) === '01' && e.register === 'Essence') {
+              && classifyUL(normQuery) === KIND.ESSENCE && e.register === 'Essence') {
             essenceWildcardMatch = ulMatchesEssenceWildcard(normQuery, e.normUL);
           }
         }
