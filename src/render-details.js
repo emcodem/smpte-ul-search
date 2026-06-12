@@ -62,6 +62,19 @@
           }
         }
       }
+      // Wildcard zone (bytes 5-7): the entry carries 7f (matches anything) but the query had a
+      // specific value — decode what that value means so e.g. byte 6 = 53 is explained as the
+      // standard MXF local set even though the register entry shows 7f.
+      if (!queryHint && !isEssenceEl && (b === 4 || b === 5 || b === 6) && val === '7f'
+          && normQuery && normQuery.length >= (b + 1) * 2) {
+        const qval = normQuery.substring(b * 2, b * 2 + 2);
+        if (qval !== '7f') {
+          const qeb = genericByteInfo(b, qval, normQuery);
+          if (qeb && qeb.desc) {
+            queryHint = ` <em class="query-hint">(your query: 0x${qval} — ${escHtml(qeb.desc)})</em>`;
+          }
+        }
+      }
       // System Item byte 16 (Metadata Block Count): ff in entry matches any count
       if (!queryHint && isSystemItem && b === 15 && val === 'ff' && normQuery && normQuery.length === 32) {
         const qval = normQuery.substring(30, 32);
