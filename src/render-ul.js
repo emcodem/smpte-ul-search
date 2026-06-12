@@ -19,8 +19,9 @@
     if (groups.length !== 4 || groups.some(g => g.length !== 8)) return escHtml(ul);
 
     const normUL = groups.join(''); // 32 hex chars, no separators
-    // Essence element keys (ST 2088): byte 5 = 01. In these ULs, 7f is a wildcard in
-    // every byte position after the fixed 4-byte SMPTE prefix, not just bytes 5-8.
+    // Essence element keys are classified in ul-spec.js (bytes 5-7 = 010201, bytes 9-12 =
+    // 0d010301). For these, bytes 5-8 are fixed structural literals while 7f acts as a
+    // wildcard in the item-designator/track bytes 9-16 (ST 2088 / ST 379-2).
     const isEssenceEl  = isEssenceElementKey(normUL);
     const isSystemItem = isSystemItemKey(normUL);
 

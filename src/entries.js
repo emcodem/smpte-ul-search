@@ -80,24 +80,21 @@
       if (e.ul) ulIndex.set(e.ul, e);
     }
 
-    // Essence element lookup maps derived from LEAF register entries.
-    // ESSENCE_B14_NAMES keyed by bytes 13–14 (4 hex chars): element type / codec description.
-    // ESSENCE_B15_NAMES keyed by bytes 13–15 (6 hex chars): wrapping qualifier description.
-    // First LEAF match wins; used by essenceByteInfo() at render time.
-    const essenceB14Names = Object.create(null);
+    // Essence element type lookup, derived from LEAF register entries.
+    // Keyed by bytes 13–15 (6 hex chars: item-type + count + element-type): resolves an
+    // essence element key's codec/format name. First LEAF match wins; read by essenceByteInfo()
+    // and renderEssenceElementSection() at render time.
     const essenceB15Names = Object.create(null);
     for (const e of allEntries) {
       if (e.register !== 'Essence' || e.normUL.length !== 32 || e.kind !== 'LEAF') continue;
-      const k14 = e.normUL.substring(24, 28);
       const k15 = e.normUL.substring(24, 30);
-      if (!essenceB14Names[k14]) essenceB14Names[k14] = e.name;
       if (!essenceB15Names[k15]) essenceB15Names[k15] = e.name;
     }
 
     const registers = [...new Set(allEntries.map(e => e.register))];
     const idleStatus = `${allEntries.length.toLocaleString()} entries across ${registers.length} registers. Type to search.`;
 
-    return { allEntries, ulIndex, essenceB14Names, essenceB15Names, registers, idleStatus };
+    return { allEntries, ulIndex, essenceB15Names, registers, idleStatus };
   }
 
   if (typeof module !== 'undefined' && module.exports) {

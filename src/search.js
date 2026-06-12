@@ -29,12 +29,11 @@
   const { renderUnregisteredUL } = window.SMPTE.renderUnregistered;
 
   const built = buildAllEntries(window.SMPTE_ENTRIES, window.SMPTE_SYSTEM_ITEMS, normalizeHex, window.ORG_REGISTRY);
-  const { allEntries, ulIndex, essenceB14Names, essenceB15Names, idleStatus } = built;
+  const { allEntries, ulIndex, essenceB15Names, idleStatus } = built;
 
   const ctx = {
     allEntries,
     ulIndex,
-    essenceB14Names,
     essenceB15Names,
     orgRegistry: window.ORG_REGISTRY,
     privateULs:  window.PRIVATE_ULS || {},

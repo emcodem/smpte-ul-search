@@ -22,6 +22,53 @@
     { name: 'Item [16]',          desc: 'Item-specific designator byte 16 — literal'        },
   ];
 
+
+  // SMPTE ST 366M §4: Registry Category Designator values (byte 5)
+  const REGISTRY_CATEGORIES = {
+    '01': 'Dictionaries',
+    '02': 'Groups (sets and packs)',
+    '03': 'Wrappers and containers',
+    '04': 'Labels',
+  };
+
+  // SMPTE ST 366M: Registry Designator sub-types (byte 6) for the categories that enumerate
+  // byte 6 as a plain sequential sub-type number. The Groups category (02) is NOT here — its
+  // byte 6 is a bit-coded structure descriptor handled by groupsByte6Info() below.
+  const REGISTRY_SUBCATEGORIES = {
+    '01': { '01': 'Metadata dictionaries', '02': 'Essence dictionaries', '03': 'Control dictionaries', '04': 'Types dictionaries' },
+    '03': { '01': 'Simple wrappers', '02': 'Complex wrappers' },
+    '04': { '01': 'Labels dictionary' },
+  };
+
+  // Maximum valid byte 6 integer value per byte 5 category (ST 366M). Groups (02) is excluded —
+  // its byte 6 is not a range but a structure code (see groupsByte6Info).
+  const BYTE6_MAX_VALID = { '01': 0x04, '03': 0x02, '04': 0x01 };
+
+  // Byte 6 for the Groups / "Sets and Packs" category (byte 5 = 02) is a SMPTE ST 336 bit-coded
+  // STRUCTURE descriptor, not a sequential sub-type. The low nibble selects the group kind; for
+  // local sets the high nibble selects the tag/length encoding. These codes are carried in real
+  // MXF files — the public register wildcards byte 6 with 7f, so they never appear in the XML.
+  // The encoding directly drives a KLV parser's inner read loop (tag/length field widths).
+  const GROUP_KINDS = { 1: 'Universal Set', 2: 'Global Set', 3: 'Local Set', 5: 'Fixed-Length Pack', 6: 'Variable-Length Pack' };
+  const GROUPS_REGISTRY_DESIGNATORS = {
+    '05': 'Fixed-Length Pack (non-tagged, non-counted elements)',
+    '06': 'Variable-Length Pack',
+    '13': 'Local Set — 2-byte tag, BER long-form length (a property may exceed 65,535 bytes)',
+    '43': 'Local Set — 2-byte tag, 1-byte length',
+    '53': 'Local Set — 2-byte tag, 2-byte length (standard MXF local set; every property ≤ 65,535 bytes)',
+    '63': 'Local Set — 1-byte tag, 4-byte length',
+  };
+  // Decode a Groups byte-6 structure code. Returns { desc, warning? }. Known codes are described
+  // precisely; otherwise the low nibble is read as the group kind; only a low nibble that names
+  // no group kind is flagged. Never applies a numeric range check (53h, 13h, etc. are all valid).
+  function groupsByte6Info(val) {
+    const known = GROUPS_REGISTRY_DESIGNATORS[val];
+    if (known) return { desc: known };
+    const kind = GROUP_KINDS[parseInt(val.charAt(1), 16)];
+    if (kind) return { desc: `${kind} — structure code 0x${val} (SMPTE ST 336)` };
+    return { desc: `unrecognized Sets & Packs structure code 0x${val}`, warning: true };
+  }
+
   // Essence element byte semantics — SMPTE ST 379-2:2010 §10.1 Table 3
   // Byte 13 (0-indexed 12): Item Type Identifier
   // Byte 14 (0-indexed 13): Essence Element Count — constant per track, often 7f in register
@@ -46,25 +93,16 @@
   const SYSTEM_SCHEME_NAMES = {
     '01': 'CP System Scheme 1 (SMPTE 326M)',
   };
-
-  // SMPTE ST 366M §4: Registry Category Designator values (byte 5)
-  const REGISTRY_CATEGORIES = {
-    '01': 'Dictionaries',
-    '02': 'Groups (sets and packs)',
-    '03': 'Wrappers and containers',
-    '04': 'Labels',
+  // System Item byte 15 — Metadata Element Type: which metadata set/pack the key carries
+  // (SMPTE 326M System Metadata Pack + SMPTE 385M System Item Sets).
+  const METADATA_ELEMENT_TYPES = {
+    '01': 'System Metadata Pack (core system metadata)',
+    '02': 'Package Metadata Set',
+    '03': 'Picture Metadata Set',
+    '04': 'Sound Metadata Set',
+    '05': 'Data Metadata Set',
+    '06': 'Control Data Set',
   };
-
-  // SMPTE ST 366M: Registry Designator sub-types (byte 6), keyed by byte 5 value
-  const REGISTRY_SUBCATEGORIES = {
-    '01': { '01': 'Metadata dictionaries', '02': 'Essence dictionaries', '03': 'Control dictionaries', '04': 'Types dictionaries' },
-    '02': { '01': 'Universal sets', '02': 'Global sets (default)', '03': 'Local sets (default)', '04': 'Variable-length packs (default)', '05': 'Fixed-length packs' },
-    '03': { '01': 'Simple wrappers', '02': 'Complex wrappers' },
-    '04': { '01': 'Labels dictionary' },
-  };
-
-  // Maximum valid byte 6 integer value per byte 5 category (ST 366M)
-  const BYTE6_MAX_VALID = { '01': 0x04, '02': 0x05, '03': 0x02, '04': 0x01 };
 
   // Validate bytes 5, 6, 7 of a SMPTE UL hex string (32 chars, no separators).
   // Returns an array of human-readable issue strings (empty = all valid).
@@ -79,11 +117,20 @@
       } else if (normQ.length >= 12) {
         const b6 = normQ.substring(10, 12);
         if (b6 !== '7f') {
-          const b6int = parseInt(b6, 16);
-          const maxValid = BYTE6_MAX_VALID[b5];
-          if (b6int < 0x01 || b6int > maxValid) {
-            const maxHex = maxValid.toString(16).padStart(2, '0').toUpperCase();
-            issues.push(`Byte 6 (0x${b6.toUpperCase()}) is not a valid Registry Designator for ${catName} — must be 01–${maxHex} per SMPTE ST 366M.`);
+          if (b5 === '02') {
+            // Groups: byte 6 is a bit-coded structure descriptor (local-set tag/length sizes or
+            // pack type), so 53h, 13h, 43h, 63h, 05h, 06h … are all valid. Flag only a low nibble
+            // that names no group kind.
+            if (groupsByte6Info(b6).warning) {
+              issues.push(`Byte 6 (0x${b6.toUpperCase()}) is not a recognized Sets & Packs structure designator per SMPTE ST 336 — the low nibble must select a group kind: 1 Universal Set, 2 Global Set, 3 Local Set, 5 Fixed-Length Pack, 6 Variable-Length Pack.`);
+            }
+          } else {
+            const b6int = parseInt(b6, 16);
+            const maxValid = BYTE6_MAX_VALID[b5];
+            if (b6int < 0x01 || b6int > maxValid) {
+              const maxHex = maxValid.toString(16).padStart(2, '0').toUpperCase();
+              issues.push(`Byte 6 (0x${b6.toUpperCase()}) is not a valid Registry Designator for ${catName} — must be 01–${maxHex} per SMPTE ST 366M.`);
+            }
           }
         }
       }
@@ -118,6 +165,10 @@
         if (val === '7f') return null;
         const b5 = normUL ? normUL.substring(8, 10) : null;
         if (!b5 || !REGISTRY_CATEGORIES[b5]) return { name: 'Registry Designator', desc: `0x${val} — registry sub-type` };
+        if (b5 === '02') { // Groups: bit-coded structure descriptor, not a sequential sub-type
+          const g = groupsByte6Info(val);
+          return { name: 'Registry Designator', desc: g.desc, warning: g.warning };
+        }
         const subName = REGISTRY_SUBCATEGORIES[b5] && REGISTRY_SUBCATEGORIES[b5][val];
         const maxValid = BYTE6_MAX_VALID[b5];
         const isOutOfSpec = parseInt(val, 16) < 0x01 || parseInt(val, 16) > maxValid;
@@ -210,23 +261,27 @@
         const s = SYSTEM_SCHEME_NAMES[val];
         return { name: 'System Scheme Identifier', desc: s || `scheme 0x${val} — see associated SMPTE document` };
       }
-      case 14: return {
-        name: 'Metadata/Control Element Identifier',
-        desc: val === '01'
-          ? 'First metadata element — marks start of content package (SMPTE 379-1-2009 §6.2.1)'
-          : `element identifier 0x${val}`,
+      case 14: {
+        const t = METADATA_ELEMENT_TYPES[val];
+        return { name: 'Metadata Element Type', desc: t ? `${t} (0x${val})` : `metadata element type 0x${val} — see SMPTE 326M / 385M` };
+      }
+      case 15: return {
+        name: 'Metadata Block Count',
+        desc: val === 'ff'
+          ? 'any (wildcard) — ff matches any block count'
+          : `${parseInt(val, 16)} metadata block(s) in this element`,
       };
-      case 15: return { name: 'Reserved', desc: 'Reserved for use by Metadata Element' };
       default: return null;
     }
   }
 
   window.SMPTE = window.SMPTE || {};
+  // Public surface consumed by the render-* modules. The per-byte value maps
+  // (ESSENCE_ITEM_TYPES, SYSTEM_ITEM_TYPES, SYSTEM_SCHEME_NAMES, METADATA_ELEMENT_TYPES)
+  // are intentionally NOT exported — callers go through the *ByteInfo helpers so byte
+  // semantics live in exactly one place.
   window.SMPTE.byteInfo = {
     UL_BYTE_INFO,
-    ESSENCE_ITEM_TYPES,
-    SYSTEM_ITEM_TYPES,
-    SYSTEM_SCHEME_NAMES,
     isEssenceElementKey,
     isSystemItemKey,
     essenceByteInfo,

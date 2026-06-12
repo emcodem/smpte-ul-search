@@ -6,8 +6,10 @@
  * They support multiple encoding variants (fixed-length packs, local sets with different
  * tag/length sizes) and multiple metadata element types (package, picture, sound, data, control).
  *
- * Bytes 1-5 + 8-12 are identical across all entries; we factor them into a shared base
- * and override only the bytes that vary (6, 7, 13-16).
+ * Bytes 1-5, 8-14 are identical across all entries; we factor them into shared bases
+ * (COMMON_BYTES + LOCAL_SET_TAIL_PREFIX) and override only the bytes whose values vary:
+ * byte 6 (Registry Designator), byte 15 (Metadata Element Type), byte 16 (Block Count).
+ * Byte 7's value is always 01; only its description differs between pack/set variants.
  */
 
 // Bytes 1-5 + 8-12 are identical across every System Item key. Byte 7 (Structure
@@ -53,8 +55,10 @@ function makeLocalSet(regDesignator, metadataType, byte16) {
   };
 }
 
-const BLOCK_COUNT_BYTE     = { name: 'Metadata Block Count', value: '00', meaning: 'Number of metadata blocks in element' };
-const BLOCK_COUNT_CTRL     = { name: 'Metadata Block Count', value: '00', meaning: 'Number of metadata blocks in element (typically 0 for control)' };
+// Byte 16 carries the Metadata Block Count. In the register keys it is ff — the wildcard
+// that matches any actual count (ST 379-1 §6.2.1; see ul-spec.js byteMatchRule 'wildcardFF').
+const BLOCK_COUNT_BYTE     = { name: 'Metadata Block Count', value: 'ff', meaning: 'Number of metadata blocks in element — ff matches any count (wildcard)' };
+const BLOCK_COUNT_CTRL     = { name: 'Metadata Block Count', value: 'ff', meaning: 'Number of metadata blocks in element — ff matches any count (wildcard); typically 0 for control' };
 
 const SYSTEM_ITEMS = [
   // ========================================================================
@@ -74,7 +78,7 @@ const SYSTEM_ITEMS = [
       13: { name: 'Item Designator Byte 5',  value: '04', meaning: 'CP-compatible System Item (SDTI-CP or equivalent)' },
       14: { name: 'Item Designator Byte 6',  value: '01', meaning: 'SDTI-CP version 1' },
       15: { name: 'Metadata Element Type',   value: '01', meaning: 'System Metadata Pack (core system metadata)' },
-      16: { name: 'Reserved',                value: '00', meaning: 'Reserved — must be zero' },
+      16: { name: 'Metadata Block Count',    value: '00', meaning: '00 — fixed-length pack carries no counted metadata blocks' },
     },
   },
 

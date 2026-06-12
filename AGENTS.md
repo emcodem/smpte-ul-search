@@ -39,7 +39,7 @@ Browser-only application modules. Each file wraps its code in an IIFE and attach
 |---|---|---|
 | `src/dom-utils.js` | `dom` | HTML-safe string helpers: `escHtml`, `escRegex`, and `hl` (highlight query matches with `<mark>`). |
 | `src/byte-info.js` | `byteInfo` | Static UL byte metadata (`UL_BYTE_INFO` array, essence/system-item type maps), ST 366M validation (`validateULQueryBytes`, `genericByteInfo`), and per-byte description helpers (`essenceByteInfo`, `systemItemByteInfo`). Its `isEssenceElementKey`/`isSystemItemKey` delegate to `ul-spec.js` (the renderers import them from here). |
-| `src/entries.js` | `entries` | `buildAllEntries(rawEntries, systemItems, normalizeHex, orgRegistry)` — merges and normalises both data sources, builds `ulIndex` (a `Map` keyed by UL for O(1) record-name lookup), and derives essence element lookup maps (`essenceB14Names`, `essenceB15Names`). Returns a `ctx`-compatible object. |
+| `src/entries.js` | `entries` | `buildAllEntries(rawEntries, systemItems, normalizeHex, orgRegistry)` — merges and normalises both data sources, builds `ulIndex` (a `Map` keyed by UL for O(1) record-name lookup), and derives the essence element type lookup map (`essenceB15Names`, keyed by bytes 13–15). Returns a `ctx`-compatible object. |
 | `src/render-ul.js` | `renderUL` | `renderUL(ul, normQuery, entry, ctx)` — renders a single UL as colour-coded, tooltip-annotated byte spans. Highlights matched bytes, marks wildcards, and enriches byte 9 tooltips with org data. |
 | `src/render-details.js` | `renderDetails` | `renderDetails(e, normQuery, ctx)` — renders the expandable Details block for a registered entry. Internally uses `renderOrgSection`, `renderULByteTable`, `renderFieldsSection`, `renderRecordsSection`, `renderRefsSection`. Exports `renderOrgSection` for reuse by `render-unregistered.js`. |
 | `src/render-unregistered.js` | `renderUnregistered` | `renderUnregisteredUL(normUL, ctx)` — renders the special amber card shown when a 32-hex query has no register match. Detects and decodes System Item keys (SMPTE 379-1-2009), Essence Element keys (ST 379-2), and known private definitions. Reuses `renderOrgSection` from `render-details.js`. |
@@ -114,10 +114,11 @@ renderers both read from there. The kind of a UL selects which rules apply:
 
 - **Generic SMPTE UL** — byte 8 (Version Number) is always ignored; bytes 5–7 (Category / Registry /
   Structure) with value `7f` match any value (the ST 366M wildcard zone); all other bytes literal.
-- **Essence element key** — `06 0e 2b 34` + bytes 5–7 = `010201` + bytes 9–12 = `0d010301` (version
-  byte ignored; the `0d010301` requirement separates real element keys from other `0102…` essence
-  dictionary labels). Matched via `ulMatchesEssenceWildcard`: bytes 1–8 literal, `7f` is a wildcard
-  in bytes 9–16, and bytes 14 + 16 (Element Count / Element Number) are always masked (ST 379-2 §10.1).
+- **Essence element key** — `06 0e 2b 34` + bytes 5–7 = `010201` + bytes 9–12 = `0d010301` (the
+  version byte is excluded from *classification*; the `0d010301` requirement separates real element
+  keys from other `0102…` essence dictionary labels). Matched via `ulMatchesEssenceWildcard`: bytes
+  1–8 are literal (every register essence element key uses version `01`), `7f` is a wildcard in
+  bytes 9–16, and bytes 14 + 16 (Element Count / Element Number) are always masked (ST 379-2 §10.1).
 - **System Item key** (SMPTE 379-1 §6.2.1 / 326M / 385M) — byte 5 = `02`, byte 7 = `01`,
   bytes 9–12 = `0d010301`, byte 13 ∈ {`04` CP, `14` GC}. Byte 16 (Metadata Block Count) with value
   `ff` matches any count.
