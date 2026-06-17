@@ -56,13 +56,14 @@ Node scripts for generating committed source files from their source data.
 
 | File | Purpose |
 |---|---|
+| `tools/build-data.js` | Reads all `registers/*.xml`, parses entries, wires reverse references, builds full-text search fields, and writes `data.js`. Run `node tools/build-data.js` whenever register XMLs are updated. UMD-wrapped JSON output compatible with browser and Node. |
 | `tools/gen-docs-catalog.js` | Reads `smpte_docs.json` (902 entries), extracts slugs from each `url` field, and writes `smpte-docs.js`. Run `node tools/gen-docs-catalog.js` whenever `smpte_docs.json` is refreshed. |
 
 ---
 
 ## `registers/`
 
-Source SMPTE register XML files (read-only input to `build-data.ps1`). Do not edit manually.
+Source SMPTE register XML files (read-only input to `tools/build-data.js` or `build-data.ps1`). Do not edit manually.
 
 | File | Content |
 |---|---|
@@ -98,6 +99,10 @@ matching gate, the hex-normalization suite, and the API contract tests — all e
 Open `index.html` in any modern browser. No server required.
 
 ### Regenerate `data.js` after XML updates
+```bash
+node tools/build-data.js    # Node.js (cross-platform)
+```
+Or on Windows with PowerShell:
 ```powershell
 .\build-data.ps1
 ```

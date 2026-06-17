@@ -287,3 +287,12 @@ mark { background: #fde68a; border-radius: 2px; padding: 0 1px; font-style: norm
 .private-sources { margin: 0; padding-left: 1.5em; }
 .private-sources li { margin: 2px 0; }
 .match-table-heading { margin-top: 0.8rem; }
+
+footer {
+  margin-top: 2rem;
+  padding: 0.75rem 0;
+  border-top: 1px solid #e5e7eb;
+  text-align: center;
+  font-size: 0.82rem;
+  color: #6b7280;
+}
