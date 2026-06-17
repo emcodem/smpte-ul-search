@@ -3,6 +3,7 @@
   'use strict';
 
   const { escHtml, hl } = window.SMPTE.dom;
+  const { linkifyDoc } = window.SMPTE.links;
   const { renderUL } = window.SMPTE.renderUL;
   const { renderDetails } = window.SMPTE.renderDetails;
 
@@ -48,7 +49,7 @@
     ${essenceWildcardMatch ? `<span class="badge b-ul-ewc" title="Matched via ST 379-2:2010 essence element key — byte 13 (Item Type) and byte 15 (Essence Element Type) must agree; byte 14 (Essence Element Count) and byte 16 (Essence Element Number) are per-track values and always masked.">Essence wildcard</span>` : ''}
     ${isPrefixMatch ? `<span class="badge b-ul-prefix" title="Your query is ${normQuery.length / 2} of 16 bytes — this entry matched on the leading bytes only. Remaining bytes (shown greyed in the UL above) were not part of the query. Add more bytes to narrow to a unique entry.">UL prefix</span>` : ''}
     ${e.symbol ? `<span class="card-symbol">${hl(e.symbol, rawQuery)}</span>` : ''}
-    ${e.defDoc  ? `<span class="card-doc">${hl(e.defDoc, rawQuery)}</span>` : ''}
+    ${e.defDoc  ? `<span class="card-doc">${linkifyDoc(e.defDoc)}</span>` : ''}
   </div>
   ${hintsHtml}
   ${e.definition ? `<div class="card-def">${hl(e.definition, rawQuery)}</div>` : ''}

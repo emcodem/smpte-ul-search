@@ -5,7 +5,7 @@
   "engines": { "node": ">=18" },
   "scripts": {
     "dev": "vercel dev",
-    "test": "node tests/regression.test.js && node tests/normalizeHex.test.js && node tests/test-api.js"
+    "test": "node tests/regression.test.js && node tests/normalizeHex.test.js && node tests/linkify.test.js && node tests/test-api.js"
   },
   "devDependencies": {
     "vercel": "^54.11.1"

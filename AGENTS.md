@@ -18,6 +18,7 @@ There is no server, no build step for the UI, and no npm. Open `index.html` in a
 | `orgs.js` | SMPTE-RA Class 13/14 organisation registry. Maps bytes 8–9 of a normalised UL (e.g. `"0d01"`) to `{ name, cls }`. Sets `window.ORG_REGISTRY`. Source: smpte-ra.org/class-1314-registrations. |
 | `private.js` | Manually curated Class-14 (Private Use) UL definitions reverse-engineered from vendor SDKs and public technical docs. Sets `window.PRIVATE_ULS` (keyed by 32-char normalised UL). Currently contains one entry (Sony S-Log3); the rest are documented placeholders for future population. |
 | `systemItems.js` | Hard-coded SMPTE System Item UL definitions for keys defined only in SMPTE prose standards (326M, 385M) and absent from the public register XML. Sets `window.SMPTE_SYSTEM_ITEMS`. Also exports via `module.exports` for the Node test runner. |
+| `smpte-docs.js` | **Generated — do not edit.** Exports `window.SMPTE.docCatalog.SLUGS` (a `Set` of 902 valid slug strings derived from `smpte_docs.json`). Used by `src/smpte-links.js` to validate slugs before linking, avoiding 404s. Regenerate with `node tools/gen-docs-catalog.js` when the catalog is refreshed. Also usable via `module.exports` in Node. |
 | `data.js` | **Generated — do not edit.** ~7 MB minified JSON blob of all SMPTE register entries. Sets `window.SMPTE_ENTRIES`. Regenerate with `build-data.ps1`. |
 | `build-data.ps1` | PowerShell script that parses the five XML files in `registers/`, wires cross-references and reverse-ref arrays, builds a full-text search field per entry, and writes the result to `data.js`. Run this whenever register XMLs are updated. |
 
@@ -38,6 +39,7 @@ Browser-only application modules. Each file wraps its code in an IIFE and attach
 | File | `window.SMPTE` key | Purpose |
 |---|---|---|
 | `src/dom-utils.js` | `dom` | HTML-safe string helpers: `escHtml`, `escRegex`, and `hl` (highlight query matches with `<mark>`). |
+| `src/smpte-links.js` | `links` | `linkifyDoc(text, catalog)` — converts SMPTE document references in plain text into `<a>` hyperlinks pointing to `https://pub.smpte.org/doc/<slug>/`. Handles modern forms (`ST 377-1`, `RP 2057`), legacy M-suffix (`SMPTE 380M`), year suffixes (`SMPTE 352M-2001`), colon-year (`ST 379-2:2010`), dot notation (`SMPTE 429.6`), no-space (`SMPTE ST2067-2`), and bare numeric siblings after `&` (`296M` in `SMPTE 274M & 296M`). Non-SMPTE refs (EBU, ISO, AMWA) pass through unchanged. Slugs are validated against the catalog Set — unknown slugs fall back to `https://pub.smpte.org/doc/`. Internally HTML-escapes input before inserting `<a>` tags. UMD: also usable via `module.exports` in Node. `defDoc` values throughout the app now render as links produced by this function. |
 | `src/byte-info.js` | `byteInfo` | Static UL byte metadata (`UL_BYTE_INFO` array, essence/system-item type maps), ST 366M validation (`validateULQueryBytes`, `genericByteInfo`), and per-byte description helpers (`essenceByteInfo`, `systemItemByteInfo`). Its `isEssenceElementKey`/`isSystemItemKey` delegate to `ul-spec.js` (the renderers import them from here). |
 | `src/entries.js` | `entries` | `buildAllEntries(rawEntries, systemItems, normalizeHex, orgRegistry)` — merges and normalises both data sources, builds `ulIndex` (a `Map` keyed by UL for O(1) record-name lookup), and derives the essence element type lookup map (`essenceB15Names`, keyed by bytes 13–15). Returns a `ctx`-compatible object. |
 | `src/render-ul.js` | `renderUL` | `renderUL(ul, normQuery, entry, ctx)` — renders a single UL as colour-coded, tooltip-annotated byte spans. Highlights matched bytes, marks wildcards, and enriches byte 9 tooltips with org data. |
@@ -45,6 +47,16 @@ Browser-only application modules. Each file wraps its code in an IIFE and attach
 | `src/render-unregistered.js` | `renderUnregistered` | `renderUnregisteredUL(normUL, ctx)` — renders the special amber card shown when a 32-hex query has no register match. Detects and decodes System Item keys (SMPTE 379-1-2009), Essence Element keys (ST 379-2), and known private definitions. Reuses `renderOrgSection` from `render-details.js`. |
 | `src/render-card.js` | `renderCard` | `renderCard(e, rawQuery, normQuery, queryLower, …, ctx)` and `getMatchHints` — renders a single search result card with name, UL, badges (register, kind, deprecated, match type), match-context hints, definition snippet, and the Details block. |
 | `src/search.js` | *(entry point)* | Boots the application: validates `window.SMPTE_ENTRIES`, calls `buildAllEntries`, assembles `ctx`, sets the idle status, and wires the search input (debounced), register-filter checkboxes, and hide-deprecated toggle. `runSearch()` orchestrates matching (direct UL, wildcard, essence wildcard, text) and renders results. Loaded last via `defer`. |
+
+---
+
+## `tools/`
+
+Node scripts for generating committed source files from their source data.
+
+| File | Purpose |
+|---|---|
+| `tools/gen-docs-catalog.js` | Reads `smpte_docs.json` (902 entries), extracts slugs from each `url` field, and writes `smpte-docs.js`. Run `node tools/gen-docs-catalog.js` whenever `smpte_docs.json` is refreshed. |
 
 ---
 
@@ -74,6 +86,7 @@ matching gate, the hex-normalization suite, and the API contract tests — all e
 | `tests/run.js` | Searches each UL in `labels.json` via the shared matcher. Exports `runCorpus()` (used by the gate). As a CLI it writes a timestamped snapshot to `tests/results/` (`node tests/run.js [--out …]`) for ad-hoc investigation — it is **not** itself a pass/fail gate. |
 | `tests/diff.js` | Lenient, count-only comparison of two snapshot files — reports gains/losses for investigating an intended change. Exit 1 only when a label drops to zero hits. Use the gate, not this, for pass/fail. |
 | `tests/normalizeHex.test.js` | Hex-normalization + dynamic-local-tag assertions (in `npm test`). |
+| `tests/linkify.test.js` | 45 unit tests for `src/smpte-links.js` — covers `toSlug()` normalization and `linkifyDoc()` for all form variants, catalog fallback, bare-sibling pass, non-SMPTE plain text, and XSS escaping (in `npm test`). |
 | `tests/test-api.js` | Vercel API handler contract tests — filters, input syntaxes, error handling (in `npm test`). |
 | `tests/labels.json` | 138 UL labels extracted from a real MXF file dump — the test corpus. |
 
@@ -87,6 +100,11 @@ Open `index.html` in any modern browser. No server required.
 ### Regenerate `data.js` after XML updates
 ```powershell
 .\build-data.ps1
+```
+
+### Regenerate `smpte-docs.js` after refreshing the doc catalog
+```powershell
+node tools/gen-docs-catalog.js   # reads smpte_docs.json, writes smpte-docs.js (902 slugs)
 ```
 
 ### Run the tests

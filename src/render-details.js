@@ -4,6 +4,7 @@
   'use strict';
 
   const { escHtml } = window.SMPTE.dom;
+  const { linkifyDoc } = window.SMPTE.links;
   const {
     UL_BYTE_INFO,
     isEssenceElementKey,
@@ -48,9 +49,9 @@
                    : (info.wildcard && !isEssenceEl) ? 'byte-wc'
                    : 'byte-item';
       const note = (!eb && isAnyEssenceWc)
-        ? ' <em>— wildcard, any value (ST 2088 essence element)</em>'
+        ? ` <em>— wildcard, any value (${linkifyDoc('ST 2088')} essence element)</em>`
         : (!eb && !isEssenceEl && isActiveWildcard) ? ' <em>— wildcard, matches any value</em>' : '';
-      const warnNote = (eb && eb.warning) ? ' <em class="byte-warn-note">⚠ out-of-spec per SMPTE ST 366M</em>' : '';
+      const warnNote = (eb && eb.warning) ? ` <em class="byte-warn-note">⚠ out-of-spec per ${linkifyDoc('SMPTE ST 366M')}</em>` : '';
       let queryHint = '';
       // When the register entry has 7f here but the query had a specific byte, show what it means.
       if (isAnyEssenceWc && normQuery && normQuery.length === 32) {
@@ -99,7 +100,7 @@
     }).join('');
 
     return `<div class="details-section">
-      <h4>UL Structure — SMPTE ST 336 (bytes 1–16)</h4>
+      <h4>UL Structure — ${linkifyDoc('SMPTE ST 336')} (bytes 1–16)</h4>
       <table class="details-table">
         <thead><tr><th>#</th><th>Value</th><th>Field</th><th>Description</th></tr></thead>
         <tbody>${rows}</tbody>
@@ -120,7 +121,7 @@
       e.klvSyntax  ? ['KLV Syntax', `0x${e.klvSyntax}`] : null,
     ].filter(f => f && f[1]);
     const fieldRows = fields.map(([k, v]) =>
-      `<tr><th>${escHtml(k)}</th><td>${escHtml(v)}</td></tr>`
+      `<tr><th>${escHtml(k)}</th><td>${k === 'Defining Document' ? linkifyDoc(v) : escHtml(v)}</td></tr>`
     ).join('');
     return `<div class="details-section">
       <h4>Registry Fields</h4>

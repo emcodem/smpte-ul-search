@@ -81,7 +81,7 @@
 
     const ulIssues = window.SMPTE.byteInfo.validateULQueryBytes(normQuery);
     const ulByteWarning = ulIssues.length
-      ? `<div class="warn-banner"><strong>Query contains out-of-spec UL bytes per SMPTE ST 366M:</strong><ul class="warn-list">${
+      ? `<div class="warn-banner"><strong>Query contains out-of-spec UL bytes per ${window.SMPTE.links.linkifyDoc('SMPTE ST 366M')}:</strong><ul class="warn-list">${
           ulIssues.map(i => `<li>${i}</li>`).join('')
         }</ul></div>`
       : '';

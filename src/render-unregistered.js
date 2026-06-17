@@ -4,6 +4,7 @@
   'use strict';
 
   const { escHtml } = window.SMPTE.dom;
+  const { linkifyDoc } = window.SMPTE.links;
   const {
     UL_BYTE_INFO,
     isEssenceElementKey,
@@ -36,8 +37,8 @@
       return `<tr><th>${escHtml(info.name)} (byte ${b + 1})</th><td class="mono">${escHtml(val)}</td><td>${escHtml(info.desc)}</td></tr>`;
     }).join('');
     return `<div class="details-section">
-      <h4>System Item Metadata Element Key — SMPTE 379-1-2009</h4>
-      <p class="section-prose">Defined in SMPTE 379-1-2009 §6.2.1 Table 1. Bytes 6 and 8 (Registry Designator / Version Number) are variable per SMPTE 336M — register entries use 7f as a wildcard in those positions, so these keys are not present verbatim in the public register XML.</p>
+      <h4>System Item Metadata Element Key — ${linkifyDoc('SMPTE ST 379-1')}</h4>
+      <p class="section-prose">Defined in ${linkifyDoc('SMPTE ST 379-1')} §6.2.1 Table 1. Bytes 6 and 8 (Registry Designator / Version Number) are variable per ${linkifyDoc('SMPTE ST 336')} — register entries use 7f as a wildcard in those positions, so these keys are not present verbatim in the public register XML.</p>
       <table class="details-table"><tbody>${rows}</tbody></table>
     </div>`;
   }
@@ -74,7 +75,7 @@
       <td>${escHtml(e.name)}</td>
       <td class="mono">${escHtml(e.normUL.substring(24))}</td>
       <td>${escHtml(e.symbol)}</td>
-      <td>${escHtml(e.defDoc)}</td>
+      <td>${linkifyDoc(e.defDoc)}</td>
     </tr>`).join('');
 
     const matchTable = leafMatches.length
@@ -85,8 +86,8 @@
       : `<p class="no-match-note">No entries found in the Essence register for element type <code>${normUL.substring(24, 26)}xx${elemTypeByte}xx</code>.</p>`;
 
     return `<div class="details-section">
-      <h4>Essence Element Key — SMPTE ST 379-2:2010</h4>
-      <p class="section-prose">Defined in SMPTE ST 379-2:2010 §10.1 Table 3. Byte 13 identifies the Content Package Item this element belongs to; byte 14 is the element count (constant per track); byte 15 is the element type (codec/format identifier); byte 16 is the element number (unique within item). Bytes 13–16 together form the MXF track number linking to Header Metadata (§10.3).</p>
+      <h4>Essence Element Key — ${linkifyDoc('SMPTE ST 379-2')}</h4>
+      <p class="section-prose">Defined in ${linkifyDoc('SMPTE ST 379-2')} §10.1 Table 3. Byte 13 identifies the Content Package Item this element belongs to; byte 14 is the element count (constant per track); byte 15 is the element type (codec/format identifier); byte 16 is the element number (unique within item). Bytes 13–16 together form the MXF track number linking to Header Metadata (§10.3).</p>
       <table class="details-table"><tbody>
         <tr><th>Item Type Identifier (byte 13)</th><td class="mono">${escHtml(normUL.substring(24, 26))}</td><td>This element belongs to the ${escHtml(itemTypeName)}</td></tr>
         ${byteRow(13, 'Essence Element Count')}
@@ -115,7 +116,7 @@
                    : isAnyEssenceWc ? 'byte-wc-active'
                    : 'byte-item';
       const note = (!eb && isAnyEssenceWc)
-        ? ' <em>— wildcard, any value (ST 2088 essence element)</em>'
+        ? ` <em>— wildcard, any value (${linkifyDoc('ST 2088')} essence element)</em>`
         : (!eb && !isEssenceElement && isActiveWildcard) ? ' <em>— wildcard, matches any value</em>' : '';
       return `<tr class="${rowCls}">
           <td class="mono">${b + 1}</td>
@@ -125,7 +126,7 @@
         </tr>`;
     }).join('');
     return `<div class="details-section">
-      <h4>UL Structure — SMPTE ST 336 (bytes 1–16)</h4>
+      <h4>UL Structure — ${linkifyDoc('SMPTE ST 336')} (bytes 1–16)</h4>
       <table class="details-table">
         <thead><tr><th>#</th><th>Value</th><th>Field</th><th>Description</th></tr></thead>
         <tbody>${rows}</tbody>
@@ -153,7 +154,7 @@
     const desc = privateEntry
       ? `This UL is a known Class ${org?.cls} private definition: <strong>${escHtml(privateEntry.name)}</strong>.`
       : isSystemItemUL
-        ? `This UL is a System Item Metadata Element key defined in SMPTE 379-1-2009 §6.2.1. It is not present verbatim in the SMPTE public register XML because bytes 6 and 8 (Registry Designator / Version Number) vary by document version. The structure is decoded below.`
+        ? `This UL is a System Item Metadata Element key defined in ${linkifyDoc('SMPTE ST 379-1')} §6.2.1. It is not present verbatim in the SMPTE public register XML because bytes 6 and 8 (Registry Designator / Version Number) vary by document version. The structure is decoded below.`
         : isEssenceElement
           ? `This UL is an MXF essence element key not present verbatim in the register. The element type is resolved below using bytes 13–14; bytes 15–16 are per-track and differ between instances.`
           : `This UL is not present in the SMPTE public register XML files.${orgNote}`;
@@ -161,7 +162,7 @@
     const cardTitle = privateEntry
       ? escHtml(privateEntry.name)
       : isSystemItemUL
-        ? 'System Item Metadata Element Key (SMPTE 379-1-2009)'
+        ? `System Item Metadata Element Key (${linkifyDoc('SMPTE ST 379-1')})`
         : isEssenceElement
           ? 'Essence Element Key (unregistered track number)'
           : `Unregistered UL${org ? ` — ${escHtml(org.name)}` : ''}`;
@@ -172,7 +173,7 @@
     <span class="card-ul">${renderUL(ulStr, '', null, ctx)}</span>
   </div>
   <div class="card-meta">
-    ${privateEntry ? `<span class="badge b-private">Private Definition Found</span>` : isSystemItemUL ? `<span class="badge b-reg">System Item (SMPTE 379-1-2009)</span>` : isEssenceElement ? `<span class="badge b-reg">Essence Element</span>` : `<span class="badge b-dep">Not in public registers</span>`}
+    ${privateEntry ? `<span class="badge b-private">Private Definition Found</span>` : isSystemItemUL ? `<span class="badge b-reg">System Item (${linkifyDoc('SMPTE ST 379-1')})</span>` : isEssenceElement ? `<span class="badge b-reg">Essence Element</span>` : `<span class="badge b-dep">Not in public registers</span>`}
     ${org ? `<span class="badge b-reg">Class ${org.cls} — ${escHtml(org.name)}</span>` : ''}
   </div>
   <div class="card-def">${desc}</div>
