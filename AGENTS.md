@@ -56,7 +56,7 @@ Node scripts for generating committed source files from their source data.
 
 | File | Purpose |
 |---|---|
-| `tools/build-data.js` | Reads all `registers/*.xml`, parses entries, wires reverse references, builds full-text search fields, and writes `data.js`. Run `node tools/build-data.js` whenever register XMLs are updated. UMD-wrapped JSON output compatible with browser and Node. |
+| `tools/build-data.js` | Downloads SMPTE registers from `registry.smpte-ra.org` if newer versions exist (checks last-modified header), then parses entries, wires reverse references, builds full-text search fields, and writes `data.js`. Registers are saved to `registers/` using relative paths. Run `node tools/build-data.js` to update data. UMD-wrapped JSON output compatible with browser and Node. |
 | `tools/gen-docs-catalog.js` | Reads `smpte_docs.json` (902 entries), extracts slugs from each `url` field, and writes `smpte-docs.js`. Run `node tools/gen-docs-catalog.js` whenever `smpte_docs.json` is refreshed. |
 
 ---
@@ -67,11 +67,11 @@ Source SMPTE register XML files (read-only input to `tools/build-data.js` or `bu
 
 | File | Content |
 |---|---|
-| `Labels.xml` | SMPTE Labels register (~2.2 MB) |
-| `Types.xml` | SMPTE Types register (~445 KB) |
-| `Elements.xml` | SMPTE Elements register (~2.2 MB) |
-| `Groups.xml` | SMPTE Groups register (~679 KB) |
-| `Essence.xml` | SMPTE Essence register (~48 KB) |
+| `Labels.xml` | SMPTE Labels register (~2.2 MB) — auto-downloaded by `tools/build-data.js` |
+| `Types.xml` | SMPTE Types register (~445 KB) — auto-downloaded by `tools/build-data.js` |
+| `Elements.xml` | SMPTE Elements register (~2.2 MB) — auto-downloaded by `tools/build-data.js` |
+| `Groups.xml` | SMPTE Groups register (~679 KB) — auto-downloaded by `tools/build-data.js` |
+| `Essence.xml` | SMPTE Essence register (~48 KB) — auto-downloaded by `tools/build-data.js` |
 
 ---
 
@@ -98,14 +98,11 @@ matching gate, the hex-normalization suite, and the API contract tests — all e
 ### Search the registers
 Open `index.html` in any modern browser. No server required.
 
-### Regenerate `data.js` after XML updates
+### Regenerate `data.js` (auto-downloads registers if newer)
 ```bash
-node tools/build-data.js    # Node.js (cross-platform)
+node tools/build-data.js
 ```
-Or on Windows with PowerShell:
-```powershell
-.\build-data.ps1
-```
+Downloads SMPTE registers from registry.smpte-ra.org if newer versions exist, then rebuilds data.js.
 
 ### Regenerate `smpte-docs.js` after refreshing the doc catalog
 ```powershell

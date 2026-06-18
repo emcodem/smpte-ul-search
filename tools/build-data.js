@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * Convert registers/*.xml to data.js (UMD-wrapped JSON)
- * Node.js equivalent of build-data.ps1
+ * Download SMPTE register XMLs and convert to data.js (UMD-wrapped JSON)
+ * Automatically fetches registers if remote versions are newer.
  *
  * Run: node tools/build-data.js
  */
@@ -10,7 +10,65 @@ const fs = require('fs');
 const path = require('path');
 const xml2js = require('xml2js');
 
+const REGISTERS_DIR = path.resolve(__dirname, '..', 'registers');
+
+// Draft registers contain more up-to-date entries than published versions.
+// Essence.xml is only available in the published registry.
+const REGISTER_SOURCES = [
+  { file: 'Labels.xml', url: 'https://registry.smpte-ra.org/view/draft/Labels.xml' },
+  { file: 'Types.xml', url: 'https://registry.smpte-ra.org/view/draft/Types.xml' },
+  { file: 'Elements.xml', url: 'https://registry.smpte-ra.org/view/draft/Elements.xml' },
+  { file: 'Groups.xml', url: 'https://registry.smpte-ra.org/view/draft/Groups.xml' },
+  { file: 'Essence.xml', url: 'https://registry.smpte-ra.org/view/published/Essence.xml' }
+];
+
 const parser = new xml2js.Parser({ mergeAttrs: false, explicitArray: true });
+
+async function fetchRegisterIfNewer(file, url) {
+  const localPath = path.join(REGISTERS_DIR, file);
+  try {
+    const response = await fetch(url, { method: 'HEAD' });
+    if (!response.ok) {
+      console.log(`  ${file}: remote fetch failed (${response.status}), using local if available`);
+      return;
+    }
+
+    const remoteTime = response.headers.get('last-modified');
+    if (!remoteTime) {
+      console.log(`  ${file}: no last-modified header, skipping update check`);
+      return;
+    }
+
+    const remoteDate = new Date(remoteTime);
+    const localExists = fs.existsSync(localPath);
+
+    if (!localExists) {
+      console.log(`  ${file}: not found locally, downloading...`);
+    } else {
+      const localStats = fs.statSync(localPath);
+      const localDate = new Date(localStats.mtime);
+      if (remoteDate <= localDate) {
+        console.log(`  ${file}: local is current`);
+        return;
+      }
+      console.log(`  ${file}: remote is newer, downloading...`);
+    }
+
+    // Download the file
+    const dataResponse = await fetch(url);
+    if (!dataResponse.ok) throw new Error(`HTTP ${dataResponse.status}`);
+    const content = await dataResponse.text();
+    fs.writeFileSync(localPath, content, 'utf8');
+    console.log(`  ${file}: updated`);
+  } catch (err) {
+    const localExists = fs.existsSync(localPath);
+    if (localExists) {
+      console.log(`  ${file}: fetch error (${err.message}), using local`);
+    } else {
+      throw new Error(`Cannot fetch ${file} and no local copy exists: ${err.message}`);
+    }
+  }
+}
 
 function getChildText(node, tag) {
   if (!node) return '';
@@ -24,13 +82,18 @@ async function main() {
   const entries = [];
   const ulToEntry = new Map();
 
+  // Download registers if needed
+  console.log('Checking for register updates...');
+  for (const { file, url } of REGISTER_SOURCES) {
+    await fetchRegisterIfNewer(file, url);
+  }
+
   // Pass 1: parse all XMLs and collect entries
-  const registersDir = path.resolve(__dirname, '..', 'registers');
-  const xmlFiles = fs.readdirSync(registersDir).filter(f => f.endsWith('.xml'));
+  const xmlFiles = fs.readdirSync(REGISTERS_DIR).filter(f => f.endsWith('.xml'));
 
   for (const file of xmlFiles) {
     console.log(`Pass 1: Parsing ${file}...`);
-    const xmlPath = path.join(registersDir, file);
+    const xmlPath = path.join(REGISTERS_DIR, file);
     const xmlText = fs.readFileSync(xmlPath, 'utf8');
     const doc = await parser.parseStringPromise(xmlText);
 
