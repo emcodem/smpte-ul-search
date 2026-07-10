@@ -7,29 +7,45 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <title>SMPTE Register Search</title>
-  <link rel="stylesheet" href="assets/styles.css">
 
-  <!-- Data + shared utilities (must load first) -->
-  <script src="orgs.js"></script>
-  <script src="private.js"></script>
-  <script src="data.js"></script>
-  <script src="systemItems.js"></script>
-  <script src="ul-spec.js"></script>
-  <script src="ul-match.js"></script>
-  <script src="smpte-docs.js"></script>
+  <!-- GitHub Pages ignores the meta cache tags above and serves every file with its own
+       Cache-Control (currently max-age=600) that browsers honor over them. To guarantee
+       stale JS/CSS is never served — not even within that window — every asset below is
+       loaded with a per-page-load cache-busting query string, forcing a fresh network
+       fetch on every visit regardless of what any cache says. -->
+  <script>
+    (function () {
+      var cb = Date.now() + '-' + Math.random().toString(36).slice(2);
+      function bust(src) { return src + '?cb=' + cb; }
+      document.write('<link rel="stylesheet" href="' + bust('assets/styles.css') + '">');
 
-  <!-- App modules (load order matters — each attaches to window.SMPTE.*) -->
-  <script src="src/dom-utils.js"></script>
-  <script src="src/smpte-links.js"></script>
-  <script src="src/byte-info.js"></script>
-  <script src="src/entries.js"></script>
-  <script src="src/render-ul.js"></script>
-  <script src="src/render-details.js"></script>
-  <script src="src/render-unregistered.js"></script>
-  <script src="src/render-card.js"></script>
-  <script src="src/search-core.js"></script>
-  <!-- Entry point — last; reads DOM and wires events -->
-  <script src="src/search.js" defer></script>
+      // Data + shared utilities (must load first)
+      [
+        'orgs.js',
+        'private.js',
+        'data.js',
+        'systemItems.js',
+        'ul-spec.js',
+        'ul-match.js',
+        'smpte-docs.js',
+        // App modules (load order matters — each attaches to window.SMPTE.*)
+        'src/dom-utils.js',
+        'src/smpte-links.js',
+        'src/byte-info.js',
+        'src/entries.js',
+        'src/render-ul.js',
+        'src/render-details.js',
+        'src/render-unregistered.js',
+        'src/render-card.js',
+        'src/search-core.js',
+      ].forEach(function (src) {
+        document.write('<script src="' + bust(src) + '"><\/script>');
+      });
+
+      // Entry point — last; reads DOM and wires events (defer until body is parsed)
+      document.write('<script src="' + bust('src/search.js') + '" defer><\/script>');
+    })();
+  </script>
 </head>
 <body>
   <h1>SMPTE Register Search</h1>
