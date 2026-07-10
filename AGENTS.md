@@ -40,7 +40,7 @@ Browser-only application modules. Each file wraps its code in an IIFE and attach
 |---|---|---|
 | `src/dom-utils.js` | `dom` | HTML-safe string helpers: `escHtml`, `escRegex`, and `hl` (highlight query matches with `<mark>`). |
 | `src/smpte-links.js` | `links` | `linkifyDoc(text, catalog)` — converts SMPTE document references in plain text into `<a>` hyperlinks pointing to `https://pub.smpte.org/doc/<slug>/`. Handles modern forms (`ST 377-1`, `RP 2057`), legacy M-suffix (`SMPTE 380M`), year suffixes (`SMPTE 352M-2001`), colon-year (`ST 379-2:2010`), dot notation (`SMPTE 429.6`), no-space (`SMPTE ST2067-2`), and bare numeric siblings after `&` (`296M` in `SMPTE 274M & 296M`). Non-SMPTE refs (EBU, ISO, AMWA) pass through unchanged. Slugs are validated against the catalog Set — unknown slugs fall back to `https://pub.smpte.org/doc/`. Internally HTML-escapes input before inserting `<a>` tags. UMD: also usable via `module.exports` in Node. `defDoc` values throughout the app now render as links produced by this function. |
-| `src/byte-info.js` | `byteInfo` | Static UL byte metadata (`UL_BYTE_INFO` array, essence/system-item type maps), ST 366M validation (`validateULQueryBytes`, `genericByteInfo`), and per-byte description helpers (`essenceByteInfo`, `systemItemByteInfo`). Its `isEssenceElementKey`/`isSystemItemKey` delegate to `ul-spec.js` (the renderers import them from here). |
+| `src/byte-info.js` | `byteInfo` | Static UL byte metadata (`UL_BYTE_INFO` array, essence/system-item type maps), ST 336 validation (`validateULQueryBytes`, `genericByteInfo`), and per-byte description helpers (`essenceByteInfo`, `systemItemByteInfo`). Its `isEssenceElementKey`/`isSystemItemKey` delegate to `ul-spec.js` (the renderers import them from here). |
 | `src/entries.js` | `entries` | `buildAllEntries(rawEntries, systemItems, normalizeHex, orgRegistry)` — merges and normalises both data sources, builds `ulIndex` (a `Map` keyed by UL for O(1) record-name lookup), and derives the essence element type lookup map (`essenceB15Names`, keyed by bytes 13–15). Returns a `ctx`-compatible object. |
 | `src/render-ul.js` | `renderUL` | `renderUL(ul, normQuery, entry, ctx)` — renders a single UL as colour-coded, tooltip-annotated byte spans. Highlights matched bytes, marks wildcards, and enriches byte 9 tooltips with org data. |
 | `src/render-details.js` | `renderDetails` | `renderDetails(e, normQuery, ctx)` — renders the expandable Details block for a registered entry. Internally uses `renderOrgSection`, `renderULByteTable`, `renderFieldsSection`, `renderRecordsSection`, `renderRefsSection`. Exports `renderOrgSection` for reuse by `render-unregistered.js`. |
@@ -127,13 +127,13 @@ node tests/diff.js tests/results/<before>.json tests/results/run-<timestamp>.jso
 
 ---
 
-## UL matching rules (SMPTE ST 336 / 366M)
+## UL matching rules (SMPTE ST 336)
 
 These rules are encoded once in `ul-spec.js` (`classifyUL` + `byteMatchRule`); the matcher and
 renderers both read from there. The kind of a UL selects which rules apply:
 
 - **Generic SMPTE UL** — byte 8 (Version Number) is always ignored; bytes 5–7 (Category / Registry /
-  Structure) with value `7f` match any value (the ST 366M wildcard zone); all other bytes literal.
+  Structure) with value `7f` match any value (the ST 336 wildcard zone); all other bytes literal.
 - **Essence element key** — `06 0e 2b 34` + bytes 5–7 = `010201` + bytes 9–12 = `0d010301` (the
   version byte is excluded from *classification*; the `0d010301` requirement separates real element
   keys from other `0102…` essence dictionary labels). Matched via `ulMatchesEssenceWildcard`: bytes

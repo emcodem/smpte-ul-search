@@ -26,7 +26,7 @@
 
   // Essence element key — SMPTE ST 379-1 (Generic Container) / ST 379-2:2010 §10.1:
   //   bytes 1-4  06 0e 2b 34   SMPTE prefix
-  //   bytes 5-7  01 02 01      Dictionaries / Essence dictionaries / structure (ST 366M)
+  //   bytes 5-7  01 02 01      Dictionaries / Essence dictionaries / structure (ST 336)
   //   byte 8     version       IGNORED — varies by registry revision (both 01 and 05 exist)
   //   bytes 9-12 0d 01 03 01   Generic Container item designator
   //   bytes 13-16              track-number tuple (item type / count / element type / number)
@@ -66,7 +66,7 @@
 
   // Per-byte match policy for matchBytes() (0-indexed byte position):
   //   'literal'    bytes must be equal
-  //   'wildcard7f' 7f on either side matches any value (ST 366M Category/Registry/Structure zone)
+  //   'wildcard7f' 7f on either side matches any value (ST 336 Category/Registry/Structure zone)
   //   'ignore'     never compared (byte 8 Version Number — always ignored per ST 336)
   //   'wildcardFF' ff on either side matches any value (System Item metadata block count, byte 16)
   //

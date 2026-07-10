@@ -8,9 +8,9 @@
     { name: 'Label Size',         desc: 'Remaining label length (fixed: 0e = 14 bytes)',    fixed: true  },
     { name: 'ISO Prefix',         desc: 'ISO/IEC designation (fixed: 2b)',                  fixed: true  },
     { name: 'SMPTE Designation',  desc: 'SMPTE organization code (fixed: 34)',              fixed: true  },
-    { name: 'Registry Category Designator', desc: 'Identifies the broad category — 01 Dictionaries, 02 Groups, 03 Wrappers, 04 Labels (SMPTE ST 366M §4)', wildcard: true },
-    { name: 'Registry Designator', desc: 'Identifies the register sub-type within the category (SMPTE ST 366M)', wildcard: true },
-    { name: 'Structure Designator', desc: 'Identifies the structure variant within the register — valid range: 01–7F (SMPTE ST 366M)', wildcard: true },
+    { name: 'Registry Category Designator', desc: 'Identifies the broad category — 01 Dictionaries, 02 Groups, 03 Wrappers, 04 Labels (SMPTE ST 336 §4)', wildcard: true },
+    { name: 'Registry Designator', desc: 'Identifies the register sub-type within the category (SMPTE ST 336)', wildcard: true },
+    { name: 'Structure Designator', desc: 'Identifies the structure variant within the register — valid range: 01–7F (SMPTE ST 336)', wildcard: true },
     { name: 'Version',            desc: 'Registry version number — always ignored during matching (version-variable)', wildcard: true },
     { name: 'Org Class',          desc: '0d = Class 13 Public Use, 0e = Class 14 Private Use, other = SMPTE standard' },
     { name: 'Org ID',             desc: 'Organization identifier — see SMPTE-RA Class 13/14 registrations' },
@@ -23,7 +23,7 @@
   ];
 
 
-  // SMPTE ST 366M §4: Registry Category Designator values (byte 5)
+  // SMPTE ST 336 §4: Registry Category Designator values (byte 5)
   const REGISTRY_CATEGORIES = {
     '01': 'Dictionaries',
     '02': 'Groups (sets and packs)',
@@ -31,7 +31,7 @@
     '04': 'Labels',
   };
 
-  // SMPTE ST 366M: Registry Designator sub-types (byte 6) for the categories that enumerate
+  // SMPTE ST 336: Registry Designator sub-types (byte 6) for the categories that enumerate
   // byte 6 as a plain sequential sub-type number. The Groups category (02) is NOT here — its
   // byte 6 is a bit-coded structure descriptor handled by groupsByte6Info() below.
   const REGISTRY_SUBCATEGORIES = {
@@ -40,7 +40,7 @@
     '04': { '01': 'Labels dictionary' },
   };
 
-  // Maximum valid byte 6 integer value per byte 5 category (ST 366M). Groups (02) is excluded —
+  // Maximum valid byte 6 integer value per byte 5 category (ST 336). Groups (02) is excluded —
   // its byte 6 is not a range but a structure code (see groupsByte6Info).
   const BYTE6_MAX_VALID = { '01': 0x04, '03': 0x02, '04': 0x01 };
 
@@ -113,7 +113,7 @@
     if (b5 !== '7f') {
       const catName = REGISTRY_CATEGORIES[b5];
       if (!catName) {
-        issues.push(`Byte 5 (0x${b5.toUpperCase()}) is not a valid Registry Category — must be 01 (Dictionaries), 02 (Groups), 03 (Wrappers), or 04 (Labels) per SMPTE ST 366M.`);
+        issues.push(`Byte 5 (0x${b5.toUpperCase()}) is not a valid Registry Category — must be 01 (Dictionaries), 02 (Groups), 03 (Wrappers), or 04 (Labels) per SMPTE ST 336.`);
       } else if (normQ.length >= 12) {
         const b6 = normQ.substring(10, 12);
         if (b6 !== '7f') {
@@ -129,7 +129,7 @@
             const maxValid = BYTE6_MAX_VALID[b5];
             if (b6int < 0x01 || b6int > maxValid) {
               const maxHex = maxValid.toString(16).padStart(2, '0').toUpperCase();
-              issues.push(`Byte 6 (0x${b6.toUpperCase()}) is not a valid Registry Designator for ${catName} — must be 01–${maxHex} per SMPTE ST 366M.`);
+              issues.push(`Byte 6 (0x${b6.toUpperCase()}) is not a valid Registry Designator for ${catName} — must be 01–${maxHex} per SMPTE ST 336.`);
             }
           }
         }
@@ -140,7 +140,7 @@
       if (b7 !== '7f') {
         const b7int = parseInt(b7, 16);
         if (b7int < 0x01 || b7int > 0x7f) {
-          issues.push(`Byte 7 (0x${b7.toUpperCase()}) is not a valid Structure Designator — must be 01–7F per SMPTE ST 366M.`);
+          issues.push(`Byte 7 (0x${b7.toUpperCase()}) is not a valid Structure Designator — must be 01–7F per SMPTE ST 336.`);
         }
       }
     }
@@ -154,10 +154,10 @@
       case 4: { // Byte 5: Registry Category Designator
         if (val === '7f') return null;
         const catName = REGISTRY_CATEGORIES[val];
-        if (catName) return { name: 'Registry Category Designator', desc: `${catName} (SMPTE ST 366M §4)` };
+        if (catName) return { name: 'Registry Category Designator', desc: `${catName} (SMPTE ST 336 §4)` };
         return {
           name: 'Registry Category Designator',
-          desc: `Unknown category 0x${val} — valid values per ST 366M: 01 Dictionaries, 02 Groups, 03 Wrappers, 04 Labels`,
+          desc: `Unknown category 0x${val} — valid values per ST 336: 01 Dictionaries, 02 Groups, 03 Wrappers, 04 Labels`,
           warning: true,
         };
       }
@@ -179,13 +179,13 @@
           warning: isOutOfSpec,
         };
       }
-      case 6: { // Byte 7: Structure Designator — valid range 01–7F per ST 366M
+      case 6: { // Byte 7: Structure Designator — valid range 01–7F per ST 336
         if (val === '7f') return null;
         const v = parseInt(val, 16);
         const isOutOfSpec = v < 0x01 || v > 0x7f;
         return {
           name: 'Structure Designator',
-          desc: `0x${val} — structure designator (valid range per ST 366M: 01–7F)`,
+          desc: `0x${val} — structure designator (valid range per ST 336: 01–7F)`,
           warning: isOutOfSpec,
         };
       }

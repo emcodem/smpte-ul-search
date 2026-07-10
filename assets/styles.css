@@ -67,8 +67,6 @@ h1 { margin: 0 0 0.2rem; font-size: 1.7rem; }
 }
 #filters label:hover { background: #e8f0fe; }
 #filters label input { cursor: pointer; margin: 0; }
-#hide-dep-wrap { margin-left: 0.5rem; border-color: #f9a8a8 !important; }
-#hide-dep-wrap:hover { background: #fde8e8 !important; }
 
 #status {
   font-size: 0.8rem;

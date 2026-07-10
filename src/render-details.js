@@ -51,7 +51,7 @@
       const note = (!eb && isAnyEssenceWc)
         ? ` <em>— wildcard, any value (${linkifyDoc('ST 2088')} essence element)</em>`
         : (!eb && !isEssenceEl && isActiveWildcard) ? ' <em>— wildcard, matches any value</em>' : '';
-      const warnNote = (eb && eb.warning) ? ` <em class="byte-warn-note">⚠ out-of-spec per ${linkifyDoc('SMPTE ST 366M')}</em>` : '';
+      const warnNote = (eb && eb.warning) ? ` <em class="byte-warn-note">⚠ out-of-spec per ${linkifyDoc('SMPTE ST 336')}</em>` : '';
       let queryHint = '';
       // When the register entry has 7f here but the query had a specific byte, show what it means.
       if (isAnyEssenceWc && normQuery && normQuery.length === 32) {

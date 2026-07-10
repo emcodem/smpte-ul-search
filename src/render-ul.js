@@ -73,7 +73,7 @@
       // For essence elements, 7f is a wildcard only in bytes 9-16 (not 5-8 which are fixed literals)
       const isAnyEssenceWc = isEssenceEl && b >= 8 && !info.wildcard && byteHex === '7f';
       if (isAnyEssenceWc && b < 12) desc = 'wildcard — any value (ST 2088 essence element)';
-      const warnSuffix = (eb && eb.warning) ? ' ⚠ out-of-spec per SMPTE ST 366M' : '';
+      const warnSuffix = (eb && eb.warning) ? ' ⚠ out-of-spec per SMPTE ST 336' : '';
       const tooltip = `Byte ${b + 1}: ${name} — ${desc}${warnSuffix}`;
 
       // Bytes 5-8 are the standard wildcard zone for non-essence ULs only

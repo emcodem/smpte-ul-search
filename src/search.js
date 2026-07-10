@@ -42,10 +42,8 @@
   statusEl.textContent = idleStatus;
 
   const filterCheckboxes = [...document.querySelectorAll('#filters input[type=checkbox][value]')];
-  const hideDepCb = document.getElementById('hide-deprecated');
   const localTagsOnlyCb = document.getElementById('local-tags-only');
   let enabledRegs = new Set(filterCheckboxes.filter(cb => cb.checked).map(cb => cb.value));
-  let hideDep = hideDepCb.checked;
   let localTagsOnly = localTagsOnlyCb.checked;
 
   function runSearch() {
@@ -64,7 +62,7 @@
     const queryLower        = raw.toLowerCase();
 
     const matches = window.SMPTE.searchCore.matchEntries({
-      allEntries, enabledRegs, hideDep, localTagsOnly, raw, ulMatch: window.UL_MATCH,
+      allEntries, enabledRegs, localTagsOnly, raw, ulMatch: window.UL_MATCH,
     });
 
     statusEl.textContent = `${matches.length.toLocaleString()} result${matches.length !== 1 ? 's' : ''}`;
@@ -81,7 +79,7 @@
 
     const ulIssues = window.SMPTE.byteInfo.validateULQueryBytes(normQuery);
     const ulByteWarning = ulIssues.length
-      ? `<div class="warn-banner"><strong>Query contains out-of-spec UL bytes per ${window.SMPTE.links.linkifyDoc('SMPTE ST 366M')}:</strong><ul class="warn-list">${
+      ? `<div class="warn-banner"><strong>Query contains out-of-spec UL bytes per ${window.SMPTE.links.linkifyDoc('SMPTE ST 336')}:</strong><ul class="warn-list">${
           ulIssues.map(i => `<li>${i}</li>`).join('')
         }</ul></div>`
       : '';
@@ -106,6 +104,5 @@
     enabledRegs = new Set(filterCheckboxes.filter(cb => cb.checked).map(cb => cb.value));
     runSearch();
   }));
-  hideDepCb.addEventListener('change', () => { hideDep = hideDepCb.checked; runSearch(); });
   localTagsOnlyCb.addEventListener('change', () => { localTagsOnly = localTagsOnlyCb.checked; runSearch(); });
 })();
