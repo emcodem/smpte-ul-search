@@ -12,7 +12,7 @@ const ROOT = 'https://pub.smpte.org/doc/';
 // Stub catalog containing slugs known to exist
 const CATALOG = new Set([
   'st274', 'st296', 'st309', 'st326', 'st330', 'st331', 'st332', 'st336', 'st352',
-  'st366', 'st377', 'st377-1', 'st377-4', 'st379-1', 'st379-2', 'st380', 'st381',
+  'st366', '377', 'st377-1', 'st377-4', 'st379-1', 'st379-2', 'st380', 'st381',
   'st381-2', 'st382', 'st394', 'st401', 'st422', 'st429-6', 'st430-6', 'st436',
   'st2037', 'st2045', 'st2067-2', 'st2067-8', 'st2088', 'rp2057', 'rp2089',
   'eg432-1', 'rdd18',
@@ -56,6 +56,9 @@ assert('trailing M on part: 429-6M', toSlug('ST','429-6M'),      'st429-6');
 assert('no-space type: 2067-2',    toSlug('ST',  '2067-2'),      'st2067-2');
 assert('RP no-space: 2089',        toSlug('RP',  '2089'),        'rp2089');
 assert('bad body → null',          toSlug('ST',  'XYZ'),         null);
+assert('ST 377 bare → deprecated slug redirect', toSlug('ST', '377'), '377');
+assert('legacy M bare: 377M → deprecated slug redirect', toSlug('ST', '377M'), '377');
+assert('ST 377-1 part unaffected', toSlug('ST', '377-1'), 'st377-1');
 
 // ---------------------------------------------------------------------------
 // linkifyDoc() — modern forms
@@ -84,6 +87,14 @@ assert('EG 432-1',
 assert('RDD 18',
   linkifyDoc('RDD 18', CATALOG),
   link('rdd18', 'RDD 18'));
+
+assert('SMPTE ST 377 (bare) resolves to deprecated-free slug',
+  linkifyDoc('SMPTE ST 377', CATALOG),
+  link('377', 'SMPTE ST 377'));
+
+assert('SMPTE 377M (bare, legacy M) resolves to deprecated-free slug',
+  linkifyDoc('SMPTE 377M', CATALOG),
+  link('377', 'SMPTE 377M'));
 
 // ---------------------------------------------------------------------------
 // linkifyDoc() — legacy M-suffix forms

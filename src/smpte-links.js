@@ -22,6 +22,9 @@
     num = num.replace(/:(19|20)\d{2}$/, '');      // 379-2:2010→379-2
     num = num.replace(/-(19|20)\d{2}$/, '');      // 379-1-2009→379-1, 352-2001→352
     if (!/^\d+(?:-\d+)*$/.test(num)) return null;
+    // ST 377 (bare, no dash-suffixed part) moved off the "st377" slug on pub.smpte.org;
+    // it now resolves at the bare numeric slug. Parts (377-1, 377-2, …) are unaffected.
+    if ((prefix || 'ST').toUpperCase() === 'ST' && num === '377') return '377';
     return (prefix || 'ST').toLowerCase() + num;
   }
 
